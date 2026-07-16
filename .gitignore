@@ -1,0 +1,26 @@
+# Vendor dependency folder
+app/tools/lib/
+
+# Scrutin metadata, documentation, and references (per user rule)
+Docs/
+Implementation/
+Refrences/
+
+# Local SQLite databases and WAL files
+*.db
+*.db-journal
+*.db-wal
+scrutin.db
+
+# Environment and secrets
+.env
+
+# Python compilation and caches
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+ENV/

@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=71"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "scrutin"
+version = "0.1.0"
+description = "Multi-agent misinformation verification platform"
+requires-python = ">=3.11"
+readme = "README.md"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
