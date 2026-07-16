@@ -1,69 +1,151 @@
-# Scrutin — Multi-Agent Misinformation Verification
+# Scrutin
 
-> A production-grade, hackathon-optimized fact-checking platform.  
-> 6 independent cognitive agents. Hub-and-spoke orchestration. Terminal-first.
+[![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Framework: PydanticAI](https://img.shields.io/badge/Framework-PydanticAI-red.svg)](https://ai.pydantic.dev/)
 
-## Architecture
+**Scrutin** is a production-grade, terminal-first multi-agent misinformation verification and fact-checking engine. Built to combat fake news, media manipulation, and domain-level spoofing, it coordinates six independent cognitive agents through a hub-and-spoke Blackboard architecture. 
 
+Unlike traditional graphs that rely on rigid DSL control flows, Scrutin operates on a plain Python orchestration loop with Reflexion-based self-critique and adversarial red-teaming.
+
+---
+
+## System Architecture
+
+Scrutin implements a decoupled hub-and-spoke state orchestration using a shared Blackboard. Sub-agents do not import or call each other; they communicate exclusively by placing typed `AgentRequest` messages on the Blackboard.
+
+```mermaid
+graph TD
+    Input[Raw Claim / URL Input] --> Decomp[Decomposition Agent]
+    Decomp --> |Atomic Claims| Blackboard[Shared Blackboard]
+    Blackboard --> |Retrieve Evidence| Evidence[Evidence & Corroboration Agent]
+    Blackboard --> |Domain Analysis| Cred[Source Credibility Agent]
+    Blackboard --> |Media Tampering| Forensics[Multimodal Forensics Agent]
+    Evidence --> |Google Fact Check & Serper| Blackboard
+    Cred --> |WHOIS Registration & Domain Trust| Blackboard
+    Forensics --> |Whisper Transcripts & pHash| Blackboard
+    Blackboard --> |Provisional Verdict| Adv[Adversarial Verifier Agent]
+    Adv --> |Attack & Critique| Blackboard
+    Blackboard --> |Stopping Score Evaluation| Evaluator[Self-Critique Evaluator]
+    Evaluator --> |Replan & Retry Task| Decomp
+    Evaluator --> |Final Report Synthesis| Verdict[Structured Verification Report]
 ```
-Input → Claim Decomposition → Evidence & Corroboration ↘
-                           → Source Credibility        → Adversarial Verifier → Verdict
-                           → Forensics (if media)     ↗
-```
 
-All agents coordinate through a shared Blackboard. The Orchestrator runs a plain `while` loop — no LangGraph, no graph DSL.
+---
 
-## Agents & Models
+## Key Features
 
-| Agent | Model | Role |
+*   **Atomic Claim Decomposition:** Parses complex articles, media transcripts, and screenshots into list-form checkable claims, separating factual assertions from rhetoric.
+*   **Dual-Path Retrieval:** Google Fact Check API database fast-path lookup, falling back to multi-key Serper.dev Google search queries with a Jina Reader Markdown scraper.
+*   **Source Credibility (EDC Memory):** Evaluates publisher registry age via WHOIS and tracks domain track records using an Extract-Deduplicate-Commit (EDC) SQLite pipeline.
+*   **Adversarial Verification:** A dedicated "Red Team" agent operating on an independent model provider (Groq Llama) tries to poke holes in the provisional verdict, preventing model alignment bias.
+*   **Reflexion Self-Critique:** A deterministic-picker evaluator grades evidence quality against a stopping score. If criteria are unmet, the agent reflects, logs the lesson in episodic memory, and replans.
+*   **WAL-Mode SQLite Persistence:** Concurrency-safe local episodic memory ensuring multiple async requests run without database locking.
+
+---
+
+## Tech Stack & Model Alignment
+
+| Component | Technology | Model / Provider |
 |---|---|---|
-| Orchestrator | Gemini 2.5 Flash | Global plan + synthesis |
-| Claim Decomposition | Groq Llama 3.1 8B | Atomic claim parsing |
-| Evidence & Corroboration | Gemini 2.5 Flash | Iterative web retrieval |
-| Source Credibility | Groq Llama 3.3 70B | Domain trust scoring |
-| Multimodal Forensics | Gemini 2.5 Flash | Media authenticity |
-| Adversarial Verifier | Groq Llama 3.3 70B | Red-team critique |
+| **Orchestrator** | Python `while` loop | Gemini 2.5 Flash |
+| **Agents Framework** | PydanticAI | Pydantic v2 validation |
+| **Paid Search API** | Serper.dev | Key pool round-robin |
+| **Free Search Fallback** | DuckDuckGo Keyless scraper | Stateless |
+| **Decomposition Agent** | Groq Llama 3.1 8B | Instant parser |
+| **Evidence & Forensics** | Google Cloud APIs | Gemini 2.5 Flash |
+| **Adversarial & Credibility** | Groq Llama 3.3 70B | Llama-3.3-70b-versatile |
+| **Episodic Memory** | SQLite WAL mode | `aiosqlite` |
+| **Semantic Memory** | Pinecone | `gemini-embedding-001` (786-dim) |
 
-## Quick Start (5 Commands)
+---
+
+## Installation & Setup
+
+### Prerequisites
+*   Python 3.11 or 3.12
+*   Optional: `ffmpeg` (for media file transcriptions)
+
+### 1. Clone & Setup Virtual Environment
+```bash
+git clone https://github.com/yourusername/scrutin.git
+cd scrutin
+python -m venv .venv
+# On Windows:
+.venv\Scripts\activate
+# On macOS/Linux:
+source .venv/bin/activate
+```
+
+### 2. Install Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Environment Configuration
+Copy the environment template and populate it with your provider credentials:
+```bash
+cp .env.example .env
+```
+*At a minimum, configure `GOOGLE_API_KEY`, `GROQ_API_KEY`, and `SERPER_API_KEY` in `.env`.*
+
+### 4. Run SQLite Migrations
+Initialize the local memory schema (creates 4 index-optimized tables in `scrutin.db`):
+```bash
+python -m app.memory.migrations
+```
+
+---
+
+## CLI Usage Guide
+
+Scrutin is fully interactive and configurable directly via the command line:
 
 ```bash
-# 1. Clone and install
-git clone https://github.com/your-org/scrutin
-cd scrutin
-pip install -r requirements.txt
-
-# 2. Configure API keys
-cp .env.example .env
-# Edit .env — minimum: GROQ_API_KEY + GOOGLE_API_KEY + SERPER_API_KEY
-
-# 3. Initialize database
-python -m app.memory.migrations
-
-# 4. Verify a claim
+# Verify a claim with full agent trace logger outputs
 python -m app.cli verify --claim "The Eiffel Tower was built in 1889" --trace
 
-# 5. Run regression tests
+# Verify an article by scraping its URL
+python -m app.cli verify --url "https://example.com/breaking-news-article"
+
+# Run the ground-truth verification regression suite (5 test claims)
 python -m app.cli test
+
+# Query SQLite episodic logs and print calibration metrics (ECE score)
+python -m app.cli stats
 ```
 
-## Tool Stack (Zero-Cost MVP)
+---
 
-| Tool | Provider | Cost |
-|---|---|---|
-| Web Search | Serper.dev (4 keys × 2500 queries) | Free tier |
-| Fact Check DB | Google Fact Check Tools API | Free |
-| Transcription | Groq Whisper large-v3 | Free tier |
-| Domain Lookup | python-whois | Free |
-| Vector Memory | Pinecone (1 free index) | Free tier |
-| Embeddings | Google gemini-embedding-001 | Free tier |
+## Expected Terminal Output
 
-## Known Limitations
+```
+12:04:33 | INFO     | orchestrator       | Run started: a1b2c3 | input_type=text
+12:04:33 | INFO     | decomposition      | Decomposed → 1 claim: C1 (event_occurrence)
+12:04:34 | INFO     | orchestrator       | Iteration 1: Launching evidence on C1
+12:04:34 | INFO     | evidence_agent     | Fast-path: Google Fact Check → 0 matches
+12:04:35 | INFO     | evidence_agent     | Searching: 'Eiffel Tower construction year' → 8 results via serper
+12:04:35 | INFO     | evidence_agent     | Stored WB1 (en.wikipedia.org)
+12:04:36 | INFO     | evidence_agent     | Finding: stance=supports, confidence=0.94
+12:04:36 | INFO     | orchestrator       | Iteration 2: Launching credibility on domain wikipedia.org
+12:04:37 | INFO     | credibility_agent  | Finding: stance=mixed, confidence=0.90
+12:04:37 | INFO     | orchestrator       | Iteration 3: Launching adversarial_agent
+12:04:39 | INFO     | adversarial        | verdict_stands=True ✓
+12:04:39 | INFO     | orchestrator       | Stopping criteria met ✓
 
-**MVP scope decisions — not bugs:**
+╭──────────────── Scrutin Verification Report ─────────────────╮
+│  Run ID     a1b2c3                                            │
+│  Verdict    TRUE                                              │
+│  Score      85 / 100                                          │
+│  Confidence 92%                                               │
+│  Iterations 3 / 20                                            │
+│  Time       5.4s                                              │
+│  Sources    en.wikipedia.org, britannica.com                  │
+╰───────────────────────────────────────────────────────────────╯
+```
 
-1. **Image/Video forensics are stubs in Phase 5** — `analyze_image_tool` returns placeholder data. Replace with a real TruFor or deepfake classifier service before demo. The Forensics agent's reasoning loop is fully wired; only the tool implementation needs upgrading.
-2. **No Wayback Machine integration** — `provenance_tools.py` does WHOIS only. Archive.org snapshot retrieval was descoped for hackathon time constraints.
-3. **Windows: Chrome/Edge cookie extraction is not supported** — `cookie_extract.py` uses DPAPI decryption for Windows Chrome cookies, which is not implemented. Only Firefox cookies work on Windows. This affects the X/Twitter scraper (`bird_x.py`). X scraping works if you manually set `AUTH_TOKEN` and `CT0` env vars.
-4. **Single-process only** — No Celery/arq task queue. Running 10+ concurrent verifications will saturate Groq's free-tier RPM limit. Scale-out path: see `architecture.md §9`.
-5. **Episodic fast-path uses text search, not vectors, in Phase 7–8** — Pinecone vector similarity search is wired in Phase 8 but requires `PINECONE_API_KEY`. Without it, similar-claim recall falls back to SQLite LIKE search (lower recall).
-6. **No X/Twitter scraping by default** — `bird_x.py` requires X browser session cookies and Node.js on PATH. Set `AUTH_TOKEN`+`CT0` env vars to enable.
+---
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
