@@ -18,6 +18,7 @@ For the targeted Phase $N$:
 1. Open and read the corresponding phase file: `d:/ENGR/Scrutin/Implementation/phase_0N_[name].md`.
 2. Open and read the master task tracker in `task.md` (located in the brain/ conversation directory).
 3. Validate that all prior phases are marked as complete `[x]`.
+4. Assess if there are any ambiguities, missing credentials, API key requirements, or design decisions that require user input. **If anything is needed, stop and ask the user for clarification before beginning any code implementation.**
 
 ### 2. Implementation
 1. Create or modify the files specified in the phase document.
