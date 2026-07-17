@@ -95,6 +95,25 @@ async def run_orchestrator(
                         conn = sqlite3.connect(db_path)
                         bb.flush_to_sqlite(conn)
                         conn.close()
+
+                        try:
+                            from app.memory.episodic import record_run
+                            await record_run(
+                                run_id=run_id,
+                                raw_input=raw_input,
+                                input_type=input_type,
+                                overall_verdict=report.overall_verdict,
+                                credibility_score=report.credibility_score,
+                                confidence=report.confidence,
+                                data_json=bb.model_dump_json(),
+                                iterations_used=bb.iterations,
+                                budget_exhausted=False,
+                                processing_time_seconds=report.processing_time_seconds,
+                                db_path=db_path,
+                            )
+                        except Exception as rec_err:
+                            log.error(f"Failed to record fast-path run: {rec_err}")
+
                         return report
             except Exception as e:
                 log.error(f"Failed to load cached run report: {e}. Falling back to standard execution.")
@@ -148,7 +167,7 @@ async def run_orchestrator(
                 try:
                     # Enforce Groq rate limit throttling
                     if t.agent in ("decomposition", "credibility", "adversarial"):
-                        from app.agents.base import groq_acquire
+                        from app.utils.rate_limiter import groq_acquire
                         await groq_acquire()
 
                     result = await agent.run(user_msg, deps=deps)

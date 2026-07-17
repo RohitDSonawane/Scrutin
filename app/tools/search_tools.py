@@ -49,21 +49,58 @@ class ArticleFetchResponse(BaseModel):
 
 def web_search(request: SearchRequest, config: dict) -> SearchResponse:
     """
-    Web search dispatcher. Uses Serper (paid) first, falls back to keyless DDG.
-    Config keys: SERPER_API_KEY (optional — falls back to keyless if absent).
+    Web search dispatcher. Uses Serper (paid) first with key rotation, falls back to keyless DDG.
     NEVER raises — returns empty results with backend_used='failed' on total failure.
     """
     date_range = (request.date_from, request.date_to) if request.date_from else None
+
+    from app.utils.serper_pool import get_pool
+    pool = get_pool()
+    key = pool.next_key()
+
+    if key:
+        config_with_key = {**config, "SERPER_API_KEY": key}
+    else:
+        # Force keyless DuckDuckGo
+        config_with_key = {k: v for k, v in config.items() if "SERPER" not in k}
 
     try:
         items, artifact = grounding.web_search(
             query=request.query,
             date_range=date_range,
-            config=config,
+            config=config_with_key,
             backend=request.backend,
         )
-    except Exception:
-        items, artifact = [], {"label": "failed", "resultCount": 0}
+    except Exception as e:
+        err_str = str(e).lower()
+        if key and ("429" in err_str or "quota" in err_str or "exhausted" in err_str or "limit" in err_str):
+            pool.mark_exhausted(key)
+            # Retry once with next key
+            fallback_key = pool.next_key()
+            if fallback_key:
+                config_with_key["SERPER_API_KEY"] = fallback_key
+                try:
+                    items, artifact = grounding.web_search(
+                        query=request.query,
+                        date_range=date_range,
+                        config=config_with_key,
+                        backend=request.backend,
+                    )
+                except Exception:
+                    items, artifact = [], {"label": "failed", "resultCount": 0}
+            else:
+                try:
+                    config_keyless = {k: v for k, v in config.items() if "SERPER" not in k}
+                    items, artifact = grounding.web_search(
+                        query=request.query,
+                        date_range=date_range,
+                        config=config_keyless,
+                        backend="keyless",
+                    )
+                except Exception:
+                    items, artifact = [], {"label": "keyless_fallback", "resultCount": 0}
+        else:
+            items, artifact = [], {"label": "failed", "resultCount": 0}
 
     results = [
         SearchResultItem(

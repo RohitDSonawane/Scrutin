@@ -64,7 +64,7 @@ async def find_similar_run(
         async with db.execute(
             f"""SELECT run_id, raw_input, overall_verdict, credibility_score, created_at
                 FROM episodic_runs
-                WHERE {where_clauses}
+                WHERE {where_clauses} AND overall_verdict IS NOT NULL
                 ORDER BY created_at DESC
                 LIMIT ?""",
             params + [limit]

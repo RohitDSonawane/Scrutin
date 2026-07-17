@@ -17,33 +17,7 @@ app_cli = typer.Typer(
 console = Console()
 
 
-def _load_config() -> dict:
-    """Load API keys from environment variables."""
-    config = {}
-    for key in [
-        "GOOGLE_API_KEY", "GROQ_API_KEY",
-        "SERPER_API_KEY", "SERPER_API_KEY_2", "SERPER_API_KEY_3", "SERPER_API_KEY_4",
-        "GOOGLE_FACT_CHECK_API_KEY", "PINECONE_API_KEY",
-        "REDDIT_CLIENT_ID", "REDDIT_CLIENT_SECRET", "REDDIT_USERNAME", "REDDIT_USER_AGENT",
-        "ORCHESTRATOR_MODEL", "DECOMPOSITION_MODEL", "EVIDENCE_MODEL",
-        "CREDIBILITY_MODEL", "FORENSICS_MODEL", "ADVERSARIAL_MODEL", "EMBEDDING_MODEL",
-    ]:
-        val = os.getenv(key)
-        if val:
-            config[key] = val
-    return config
 
-
-def _validate_keys(config: dict) -> None:
-    """Warn on missing optional keys, abort on missing required keys."""
-    if "GROQ_API_KEY" not in config:
-        console.print("[bold red]ERROR:[/] GROQ_API_KEY is missing. Cannot run agents. Set it in .env")
-        raise typer.Exit(1)
-    if "GOOGLE_API_KEY" not in config:
-        console.print("[bold red]ERROR:[/] GOOGLE_API_KEY is missing. Cannot run Gemini agents. Set it in .env")
-        raise typer.Exit(1)
-    if "SERPER_API_KEY" not in config:
-        console.print("[bold yellow]WARN:[/] SERPER_API_KEY not set. Will use free DuckDuckGo fallback (lower quality).")
 
 
 @app_cli.command("verify")
@@ -65,8 +39,8 @@ def verify_cmd(
     # Register all tools
     import app.tools._register_all  # noqa
 
-    config = _load_config()
-    _validate_keys(config)
+    from app.utils.env_validator import validate_env
+    config = validate_env()
 
     if not claim and not url:
         console.print("[bold red]ERROR:[/] Provide either --claim or --url")
@@ -134,8 +108,8 @@ def test_cmd(
     run_migrations(db_path)
     import app.tools._register_all  # noqa
 
-    config = _load_config()
-    _validate_keys(config)
+    from app.utils.env_validator import validate_env
+    config = validate_env()
 
     try:
         from tests.fixtures.ground_truth import GROUND_TRUTH_CASES

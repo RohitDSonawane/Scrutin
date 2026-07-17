@@ -19,8 +19,13 @@ async def transcribe_media_tool(ctx, media_url: str) -> dict:
     from pydantic import BaseModel
     class Req(BaseModel):
         media_url_or_path: str
-    resp = registry_call("transcribe_media", Req(media_url_or_path=media_url), ctx.deps.config)
-    return resp.model_dump()
+    try:
+        resp = registry_call("transcribe_media", Req(media_url_or_path=media_url), ctx.deps.config)
+        return resp.model_dump()
+    except Exception as e:
+        from loguru import logger
+        logger.bind(agent="tool_error").error(f"Tool 'transcribe_media_tool' failed: {e}")
+        return {"success": False, "transcript": "", "error_message": str(e)[:100], "provider": "failed"}
 
 
 @forensics_agent.tool
@@ -30,5 +35,17 @@ async def analyze_image_tool(ctx, image_path: str) -> dict:
     class Req(BaseModel):
         image_path: str
     from app.tools.registry import call as registry_call
-    resp = registry_call("analyze_image", Req(image_path=image_path))
-    return resp.model_dump()
+    try:
+        resp = registry_call("analyze_image", Req(image_path=image_path))
+        return resp.model_dump()
+    except Exception as e:
+        from loguru import logger
+        logger.bind(agent="tool_error").error(f"Tool 'analyze_image_tool' failed: {e}")
+        return {
+            "is_manipulated": False,
+            "manipulation_score": 0.0,
+            "predicted_country": None,
+            "gps_coordinates": None,
+            "perceptual_hash": None,
+            "error": str(e)[:100]
+        }
