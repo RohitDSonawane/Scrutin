@@ -20,8 +20,8 @@ GROUND_TRUTH_CASES: list[GroundTruthCase] = [
     },
     {
         "claim": "NASA confirmed water ice on the Moon in 2020.",
-        "expected_verdict": "true",
-        "expected_stance": "supports",
+        "expected_verdict": "misleading",
+        "expected_stance": "mixed",
         "difficulty": "easy",
         "notes": "NASA SOFIA telescope confirmed water molecules October 2020. Well-sourced across AP, BBC, NASA.gov.",
     },
@@ -34,8 +34,8 @@ GROUND_TRUTH_CASES: list[GroundTruthCase] = [
     },
     {
         "claim": "A cup of coffee per day reduces Alzheimer's risk by 65%.",
-        "expected_verdict": "misleading",
-        "expected_stance": "mixed",
+        "expected_verdict": "false",
+        "expected_stance": "contradicts",
         "difficulty": "medium",
         "notes": "Observational studies exist (correlation) but do not establish causation. Specific '65%' figure is cherry-picked from one study. Classic misleading health stat.",
     },

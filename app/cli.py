@@ -56,6 +56,8 @@ def verify_cmd(
     """Verify a claim or article URL through the full multi-agent pipeline."""
     from dotenv import load_dotenv
     load_dotenv()
+    from app.memory.migrations import run_migrations
+    run_migrations(db_path)
 
     from app.utils.logger import configure_terminal_logger
     configure_terminal_logger(trace=trace)
@@ -128,6 +130,8 @@ def test_cmd(
     """Run the ground-truth regression suite against 5 known-verdict claims."""
     from dotenv import load_dotenv
     load_dotenv()
+    from app.memory.migrations import run_migrations
+    run_migrations(db_path)
     import app.tools._register_all  # noqa
 
     config = _load_config()
@@ -141,21 +145,34 @@ def test_cmd(
 
     from app.orchestrator.loop import run_orchestrator
     from app.utils.logger import configure_terminal_logger
+    from app.evaluation.calibration import log_calibration_entry
     configure_terminal_logger(trace=False)
 
-    results = []
-    for case in GROUND_TRUTH_CASES:
-        console.print(f"\n[cyan]Testing:[/] {case['claim'][:60]}...")
-        report = asyncio.run(run_orchestrator(
-            raw_input=case["claim"],
-            config=config,
-            db_path=db_path,
-        ))
-        passed = report.overall_verdict == case["expected_verdict"]
-        results.append((case["claim"][:50], case["expected_verdict"], report.overall_verdict, passed))
-        status = "[green]PASS[/]" if passed else "[red]FAIL[/]"
-        console.print(f"  {status} Expected: {case['expected_verdict']} | Got: {report.overall_verdict}")
+    async def run_all_cases():
+        results = []
+        for case in GROUND_TRUTH_CASES:
+            console.print(f"\n[cyan]Testing:[/] {case['claim'][:60]}...")
+            report = await run_orchestrator(
+                raw_input=case["claim"],
+                config=config,
+                db_path=db_path,
+            )
+            passed = report.overall_verdict == case["expected_verdict"]
+            results.append((case["claim"][:50], case["expected_verdict"], report.overall_verdict, passed))
+            status = "[green]PASS[/]" if passed else "[red]FAIL[/]"
+            console.print(f"  {status} Expected: {case['expected_verdict']} | Got: {report.overall_verdict}")
 
+            outcome = "correct" if passed else "incorrect"
+            await log_calibration_entry(
+                run_id=report.run_id,
+                agent="orchestrator",
+                stated_confidence=report.confidence,
+                actual_outcome=outcome,
+                db_path=db_path,
+            )
+        return results
+
+    results = asyncio.run(run_all_cases())
     passed_count = sum(1 for r in results if r[3])
     console.print(f"\n[bold]Results: {passed_count}/{len(results)} passed[/]")
 

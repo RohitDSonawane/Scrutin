@@ -73,6 +73,31 @@ async def run_orchestrator(
         if top["score"] >= 0.95:
             log.info(f"Episodic fast-path hit: score={top['score']:.3f} → verdict={top['verdict']}")
             bb.provisional_verdict = top["verdict"]
+            import sqlite3
+            import json
+            from app.protocols.messages import VerificationReport
+            try:
+                conn = sqlite3.connect(db_path)
+                row = conn.execute(
+                    "SELECT data_json FROM episodic_runs WHERE run_id=?",
+                    (top["run_id"],)
+                ).fetchone()
+                conn.close()
+                if row:
+                    data = json.loads(row[0])
+                    cached_report_dict = data.get("final_report")
+                    if cached_report_dict:
+                        report = VerificationReport.model_validate(cached_report_dict)
+                        report.run_id = run_id
+                        report.processing_time_seconds = round(time.time() - start_time, 2)
+                        bb.final_report = report.model_dump()
+                        
+                        conn = sqlite3.connect(db_path)
+                        bb.flush_to_sqlite(conn)
+                        conn.close()
+                        return report
+            except Exception as e:
+                log.error(f"Failed to load cached run report: {e}. Falling back to standard execution.")
 
     try:
         while bb.budget_remaining():
