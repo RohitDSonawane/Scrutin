@@ -3,11 +3,14 @@ from dataclasses import dataclass, field
 from loguru import logger
 from aiolimiter import AsyncLimiter
 
-# Initialize a global limiter for Groq. Let's restrict to 30 requests per minute.
-_groq_limiter = AsyncLimiter(30, 60)
+# Global limiter reference, initialized lazily on the running loop to avoid warnings
+_groq_limiter: AsyncLimiter | None = None
 
 async def groq_acquire() -> None:
     """Acquire a slot on the Groq rate limiter before invocation to prevent 429s."""
+    global _groq_limiter
+    if _groq_limiter is None:
+        _groq_limiter = AsyncLimiter(30, 60)
     await _groq_limiter.acquire()
 
 
