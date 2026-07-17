@@ -107,13 +107,35 @@ async def run_orchestrator(
                     result = await agent.run(user_msg, deps=deps)
                     finding = result.output
 
+                    from app.protocols.messages import AdversarialCritique
+
                     if isinstance(finding, Finding):
+                        finding.agent = t.agent
+                        finding.claim_id = t.claim_id
                         bb.append_finding(finding)
                         log.bind(agent=t.agent).info(
                             f"Finding: stance={finding.stance}, confidence={finding.confidence:.2f}"
                         )
                         # Update provisional verdict
                         bb.provisional_verdict = _derive_provisional_verdict(bb)
+
+                    elif isinstance(finding, AdversarialCritique):
+                        # Convert to Finding so blackboard stores it
+                        adv_finding = Finding(
+                            agent=t.agent,
+                            claim_id=t.claim_id,
+                            stance="supports" if finding.verdict_stands else "contradicts",
+                            confidence=1.0,
+                            rationale=finding.strongest_counter,
+                            requests=[],
+                        )
+                        bb.append_finding(adv_finding)
+                        if finding.verdict_stands:
+                            log.bind(agent="adversarial").info("verdict_stands=True ✓")
+                        else:
+                            log.bind(agent="adversarial").warning(
+                                f"verdict_stands=False → '{finding.strongest_counter[:80]}...'"
+                            )
 
                     elif hasattr(finding, "claims"):
                         # DecompositionOutput — populate atomic_claims
@@ -140,10 +162,29 @@ async def run_orchestrator(
         report = _build_final_report(bb, elapsed, budget_exhausted)
         bb.final_report = report.model_dump()
 
+        # Write #1: Raw Blackboard audit trail (synchronous connection)
         conn = sqlite3.connect(db_path)
         conn.execute("PRAGMA journal_mode=WAL")
         bb.flush_to_sqlite(conn)
         conn.close()
+
+        # Write #2: Structured fields for analytics (asynchronous connection)
+        try:
+            await record_run(
+                run_id=bb.run_id,
+                raw_input=bb.raw_input,
+                input_type=bb.input_type,
+                overall_verdict=report.overall_verdict,
+                credibility_score=report.credibility_score,
+                confidence=report.confidence,
+                data_json=bb.model_dump_json(),
+                iterations_used=bb.iterations,
+                budget_exhausted=budget_exhausted,
+                processing_time_seconds=elapsed,
+                db_path=db_path,
+            )
+        except Exception as db_err:
+            log.error(f"Failed to record structured episodic run: {db_err}")
 
         log.info(f"Run complete: {run_id} | verdict={report.overall_verdict} | time={elapsed:.1f}s")
 

@@ -37,8 +37,10 @@ class Blackboard(BaseModel):
 
     def store_evidence(self, prefix: str, data: dict) -> str:
         """Store heavy evidence data and return pointer ID. Agents store IDs, not content."""
+        from loguru import logger
         eid = self.next_evidence_id(prefix)
         self.evidence_store[eid] = data
+        logger.debug(f"Stored {eid} ← {data.get('url', '')[:60]}")
         return eid
 
     def append_finding(self, finding: Finding) -> None:
