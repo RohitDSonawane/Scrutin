@@ -206,7 +206,9 @@ async def run_orchestrator(
                     elif hasattr(finding, "claims"):
                         # DecompositionOutput — populate atomic_claims
                         for c in finding.claims:
-                            bb.atomic_claims[c["claim_id"]] = c["claim_text"]
+                            claim_id = str(c.claim_id if hasattr(c, "claim_id") else c.get("claim_id"))
+                            claim_text = str(c.claim_text if hasattr(c, "claim_text") else c.get("claim_text"))
+                            bb.atomic_claims[claim_id] = claim_text
                         log.bind(agent="decomposition").info(
                             f"Decomposed → {len(finding.claims)} claims"
                         )
