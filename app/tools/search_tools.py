@@ -2,7 +2,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 from pydantic import BaseModel, Field
-import google.generativeai as genai
+from google import genai
 from app.tools.lib import grounding, web_fetch_keyless
 
 
@@ -119,15 +119,14 @@ def rerank_snippets(query: str, snippets: list[str], api_key: str, top_k: int = 
         return [(i, 0.5) for i in range(len(snippets))][:top_k]
 
     try:
-        genai.configure(api_key=api_key)
+        client = genai.Client(api_key=api_key)
         # Batch embed the query + all snippets to minimize API roundtrips
         contents = [query] + snippets
-        result = genai.embed_content(
-            model="models/gemini-embedding-001",
-            content=contents,
-            task_type="retrieval_document"
+        response = client.models.embed_content(
+            model="gemini-embedding-001",
+            contents=contents,
         )
-        embeddings = result["embedding"]
+        embeddings = [e.values for e in response.embeddings]
         query_emb = embeddings[0]
         snippet_embs = embeddings[1:]
 

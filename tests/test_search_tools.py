@@ -118,15 +118,20 @@ def test_factcheck_never_raises_on_http_error():
 # ── rerank_snippets tests (Gemini Embeddings cosine similarity) ───────────────
 
 def test_rerank_snippets_success():
-    mock_embeddings = {
-        "embedding": [
-            [1.0, 0.0, 0.0],  # query
-            [0.9, 0.1, 0.0],  # snippet 0 (close cosine)
-            [0.1, 0.9, 0.0],  # snippet 1 (far cosine)
-        ]
-    }
-    with patch("google.generativeai.embed_content", return_value=mock_embeddings), \
-         patch("google.generativeai.configure"):
+    mock_client = MagicMock()
+    mock_response = MagicMock()
+    
+    mock_embedding0 = MagicMock()
+    mock_embedding0.values = [1.0, 0.0, 0.0]
+    mock_embedding1 = MagicMock()
+    mock_embedding1.values = [0.9, 0.1, 0.0]
+    mock_embedding2 = MagicMock()
+    mock_embedding2.values = [0.1, 0.9, 0.0]
+    
+    mock_response.embeddings = [mock_embedding0, mock_embedding1, mock_embedding2]
+    mock_client.models.embed_content.return_value = mock_response
+
+    with patch("app.tools.search_tools.genai.Client", return_value=mock_client):
         ranked = rerank_snippets(
             query="test",
             snippets=["close snippet", "far snippet"],
