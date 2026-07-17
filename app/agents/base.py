@@ -3,14 +3,19 @@ from dataclasses import dataclass, field
 from loguru import logger
 from aiolimiter import AsyncLimiter
 
-# Global limiter reference, initialized lazily on the running loop to avoid warnings
+import asyncio
+
+# Global limiter references, tracked per event loop to avoid cross-loop warning triggers
 _groq_limiter: AsyncLimiter | None = None
+_groq_limiter_loop: asyncio.AbstractEventLoop | None = None
 
 async def groq_acquire() -> None:
     """Acquire a slot on the Groq rate limiter before invocation to prevent 429s."""
-    global _groq_limiter
-    if _groq_limiter is None:
+    global _groq_limiter, _groq_limiter_loop
+    current_loop = asyncio.get_running_loop()
+    if _groq_limiter is None or _groq_limiter_loop is not current_loop:
         _groq_limiter = AsyncLimiter(30, 60)
+        _groq_limiter_loop = current_loop
     await _groq_limiter.acquire()
 
 
