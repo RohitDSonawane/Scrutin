@@ -1,11 +1,12 @@
 from __future__ import annotations
+import os
 from pydantic_ai import Agent
 from app.agents.base import AgentDeps
 from app.agents.prompts import get_prompt
 from app.protocols.messages import Finding
 
 credibility_agent = Agent(
-    "groq:llama-3.3-70b-versatile",
+    os.getenv("CREDIBILITY_MODEL", "groq:llama-3.3-70b-versatile"),
     deps_type=AgentDeps,
     output_type=Finding,
     system_prompt=get_prompt("credibility"),

@@ -1,11 +1,12 @@
 from __future__ import annotations
+import os
 from pydantic_ai import Agent
 from app.agents.base import AgentDeps
 from app.agents.prompts import get_prompt
 from app.protocols.messages import Finding
 
 forensics_agent = Agent(
-    "google:gemini-2.5-flash",
+    os.getenv("FORENSICS_MODEL", "google:gemini-2.5-flash"),
     deps_type=AgentDeps,
     output_type=Finding,
     system_prompt=get_prompt("forensics"),

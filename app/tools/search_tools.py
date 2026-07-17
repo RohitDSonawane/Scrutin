@@ -2,6 +2,7 @@ from __future__ import annotations
 import math
 from typing import Optional
 from pydantic import BaseModel, Field
+import os
 from google import genai
 from app.tools.lib import grounding, web_fetch_keyless
 
@@ -123,7 +124,7 @@ def rerank_snippets(query: str, snippets: list[str], api_key: str, top_k: int = 
         # Batch embed the query + all snippets to minimize API roundtrips
         contents = [query] + snippets
         response = client.models.embed_content(
-            model="gemini-embedding-001",
+            model=os.getenv("EMBEDDING_MODEL", "gemini-embedding-001"),
             contents=contents,
         )
         embeddings = [e.values for e in response.embeddings]
