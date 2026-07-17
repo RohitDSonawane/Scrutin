@@ -9,6 +9,7 @@ from app.agents.decomposition_agent import decomposition_agent
 from app.agents.evidence_agent import evidence_agent
 from app.agents.credibility_agent import credibility_agent
 from app.agents.adversarial_agent import adversarial_agent
+from app.agents.orchestrator_agent import orchestrator_agent
 from app.orchestrator import evaluator
 
 
@@ -23,6 +24,7 @@ async def test_loop_produces_report(tmp_path):
         evidence_agent.override(model=TestModel()),
         credibility_agent.override(model=TestModel()),
         adversarial_agent.override(model=TestModel()),
+        orchestrator_agent.override(model=TestModel()),
         evaluator._evaluator_agent.override(model=TestModel()),
         evaluator._reflection_agent.override(model=TestModel()),
     ):
@@ -47,6 +49,7 @@ async def test_loop_stops_within_budget(tmp_path):
         evidence_agent.override(model=TestModel()),
         credibility_agent.override(model=TestModel()),
         adversarial_agent.override(model=TestModel()),
+        orchestrator_agent.override(model=TestModel()),
         evaluator._evaluator_agent.override(model=TestModel()),
         evaluator._reflection_agent.override(model=TestModel()),
     ):
@@ -70,6 +73,7 @@ async def test_sqlite_flushed_on_completion(tmp_path):
         evidence_agent.override(model=TestModel()),
         credibility_agent.override(model=TestModel()),
         adversarial_agent.override(model=TestModel()),
+        orchestrator_agent.override(model=TestModel()),
         evaluator._evaluator_agent.override(model=TestModel()),
         evaluator._reflection_agent.override(model=TestModel()),
     ):

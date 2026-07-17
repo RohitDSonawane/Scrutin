@@ -52,6 +52,28 @@ async def run_orchestrator(
     deps = AgentDeps(blackboard=bb, config=config)
     budget_exhausted = False
 
+    # ── Episodic fast-path: check for similar past claims ──────────────────────
+    from app.memory.semantic import search_similar_claims
+    from app.memory.episodic import find_similar_run
+
+    similar = await search_similar_claims(raw_input, config)
+    if not similar:
+        sqlite_similar = await find_similar_run(raw_input, db_path=db_path)
+        if sqlite_similar:
+            similar = [{
+                "claim_id": sqlite_similar[0]["run_id"],
+                "run_id": sqlite_similar[0]["run_id"],
+                "verdict": sqlite_similar[0]["overall_verdict"],
+                "score": 0.97,
+                "text": sqlite_similar[0]["raw_input"],
+            }]
+
+    if similar:
+        top = similar[0]
+        if top["score"] >= 0.95:
+            log.info(f"Episodic fast-path hit: score={top['score']:.3f} → verdict={top['verdict']}")
+            bb.provisional_verdict = top["verdict"]
+
     try:
         while bb.budget_remaining():
             bb.iterations += 1
@@ -159,8 +181,65 @@ async def run_orchestrator(
     finally:
         # ALWAYS flush to SQLite — even on crash (architecture §5.3)
         elapsed = time.time() - start_time
-        report = _build_final_report(bb, elapsed, budget_exhausted)
+
+        # Wire orchestrator_agent for final synthesis (LLM call, not heuristic)
+        from app.agents.orchestrator_agent import orchestrator_agent
+        try:
+            bb_summary = _summarize_blackboard(bb)
+            prompt = (
+                f"Please synthesize the final verification report for the claim: '{bb.raw_input}'\n\n"
+                f"Blackboard state summary:\n{bb_summary}\n\n"
+                f"Provide the complete VerificationReport JSON matching the schema."
+            )
+            res = await orchestrator_agent.run(prompt, deps=deps)
+            report = res.output
+            # Ensure Python-controlled metadata fields are set correctly
+            report.processing_time_seconds = round(elapsed, 2)
+            report.iterations_used = bb.iterations
+            report.budget_exhausted = budget_exhausted
+            report.run_id = bb.run_id
+            report.raw_input = bb.raw_input
+            if not report.evidence_used:
+                from app.protocols.messages import EvidenceItem
+                report.evidence_used = [EvidenceItem(
+                    source_id=k,
+                    url=str(v.get("url", "")),
+                    snippet=str(v.get("snippet", ""))[:300],
+                    source_domain=str(v.get("source_domain", "")),
+                    relevance_score=float(v.get("relevance", 0.0)),
+                    retrieval_backend=str(v.get("backend_used", "unknown")),
+                ) for k, v in bb.evidence_store.items()]
+        except Exception as synth_err:
+            log.error(f"Failed orchestrator_agent final synthesis: {synth_err}. Falling back to heuristic.")
+            report = _build_final_report(bb, elapsed, budget_exhausted)
+
         bb.final_report = report.model_dump()
+
+        # ── Commit reputation updates proposed by credibility agent ────────────────
+        try:
+            from app.memory.longterm import propose_reputation_update
+            for finding in bb.findings:
+                if finding.get("agent") == "credibility":
+                    for eid in finding.get("evidence_ids", []):
+                        ev_data = bb.evidence_store.get(eid, {})
+                        domain = ev_data.get("source_domain", "")
+                        if domain:
+                            check_failed = (report.overall_verdict in ("false", "misleading"))
+                            result = await propose_reputation_update(domain, check_failed, db_path)
+                            if result["committed"]:
+                                log.bind(agent="orchestrator").info(
+                                    f"Reputation updated: {domain} → {result['new_score']:.0f}"
+                                )
+        except Exception as rep_err:
+            log.error(f"Reputation commitment failed: {rep_err}")
+
+        # ── Upsert verified claims into Pinecone ───────────────────────────────────
+        try:
+            from app.memory.semantic import upsert_claim
+            for claim_id, claim_text in bb.atomic_claims.items():
+                await upsert_claim(claim_id, claim_text, bb.run_id, report.overall_verdict, config, db_path)
+        except Exception as sem_err:
+            log.error(f"Claim semantic upsert failed: {sem_err}")
 
         # Write #1: Raw Blackboard audit trail (synchronous connection)
         conn = sqlite3.connect(db_path)
