@@ -24,7 +24,7 @@ Also provide a quality_note: ONE specific observation about the weakest remainin
 )
 
 _reflection_agent = Agent(
-    os.getenv("DECOMPOSITION_MODEL", "groq:llama-3.1-8b-instant"),
+    os.getenv("ORCHESTRATOR_MODEL", "google:gemini-2.5-flash"),
     output_type=AgentReflection,
     system_prompt="""
 You are the reflection agent. Given why a fact-checking run is insufficient,
@@ -40,6 +40,8 @@ async def evaluate(blackboard_summary: str) -> tuple[EvidenceEvaluation, float]:
     Returns (evaluation, stopping_score).
     stopping_score >= STOPPING_THRESHOLD → stop the loop.
     """
+    from app.utils.rate_limiter import gemini_acquire
+    await gemini_acquire()
     result = await _evaluator_agent.run(blackboard_summary)
     ev = result.output
     score = compute_stopping_score(ev)
@@ -59,7 +61,7 @@ async def reflect(blackboard_summary: str, evaluation: EvidenceEvaluation) -> Ag
         f"- confidence_matches: {evaluation.confidence_matches_evidence}\n\n"
         f"Blackboard state:\n{blackboard_summary[:1000]}"
     )
-    from app.agents.base import groq_acquire
-    await groq_acquire()
+    from app.utils.rate_limiter import gemini_acquire
+    await gemini_acquire()
     result = await _reflection_agent.run(prompt)
     return result.output

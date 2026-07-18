@@ -100,14 +100,6 @@ def replan(blackboard: Blackboard, critique: "EvidenceEvaluation", reflection: "
 
 def _ensure_adversarial_is_last(plan: Plan) -> None:
     """Re-order so adversarial tasks are always the final pending task."""
-    pending = [t for t in plan.tasks if not t.completed]
-    adversarial = [t for t in pending if t.agent == "adversarial"]
-    non_adversarial = [t for t in pending if t.agent != "adversarial"]
-    if adversarial:
-        # Mark all adversarial tasks as if completed temporarily, then re-add at end
-        for t in plan.tasks:
-            if t in adversarial:
-                t.completed = True
-        for t in adversarial:
-            t.completed = False
-            plan.tasks.append(t)
+    pending_adversarial = [t for t in plan.tasks if not t.completed and t.agent == "adversarial"]
+    others = [t for t in plan.tasks if t not in pending_adversarial]
+    plan.tasks = others + pending_adversarial

@@ -77,7 +77,7 @@ async def run_orchestrator(
             import json
             from app.protocols.messages import VerificationReport
             try:
-                conn = sqlite3.connect(db_path)
+                conn = sqlite3.connect(db_path, timeout=30.0)
                 row = conn.execute(
                     "SELECT data_json FROM episodic_runs WHERE run_id=?",
                     (top["run_id"],)
@@ -92,9 +92,22 @@ async def run_orchestrator(
                         report.processing_time_seconds = round(time.time() - start_time, 2)
                         bb.final_report = report.model_dump()
                         
-                        conn = sqlite3.connect(db_path)
-                        bb.flush_to_sqlite(conn)
-                        conn.close()
+                        def _sync_write_fast():
+                            conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
+                            try:
+                                conn.execute("BEGIN IMMEDIATE")
+                                bb.flush_to_sqlite(conn)
+                                conn.execute("COMMIT")
+                            except Exception as write_err:
+                                try:
+                                    conn.execute("ROLLBACK")
+                                except Exception:
+                                    pass
+                                raise write_err
+                            finally:
+                                conn.close()
+
+                        await asyncio.to_thread(_sync_write_fast)
 
                         try:
                             from app.memory.episodic import record_run
@@ -138,7 +151,12 @@ async def run_orchestrator(
                 log.info("Stopping criteria NOT met — reflecting and replanning")
                 reflection = await evaluator.reflect(bb_summary, ev)
                 log.bind(agent="reflection").info(f"Root cause: {reflection.root_cause}")
+                
+                old_task_count = len(bb.plan.tasks)
                 bb.plan = planner.replan(bb, ev, reflection)
+                if len(bb.plan.tasks) == old_task_count:
+                    log.warning("Replan did not add any new tasks — stopping to prevent infinite loop")
+                    break
                 continue
 
             # Gather all pending tasks in the same group (if group exists)
@@ -165,10 +183,13 @@ async def run_orchestrator(
                     user_msg = _build_agent_prompt(t, bb)
 
                 try:
-                    # Enforce Groq rate limit throttling
+                    # Enforce rate limit throttling
                     if t.agent in ("decomposition", "credibility", "adversarial"):
                         from app.utils.rate_limiter import groq_acquire
                         await groq_acquire()
+                    elif t.agent in ("evidence", "forensics"):
+                        from app.utils.rate_limiter import gemini_acquire
+                        await gemini_acquire()
 
                     result = await agent.run(user_msg, deps=deps)
                     finding = result.output
@@ -237,6 +258,8 @@ async def run_orchestrator(
                 f"Blackboard state summary:\n{bb_summary}\n\n"
                 f"Provide the complete VerificationReport JSON matching the schema."
             )
+            from app.utils.rate_limiter import gemini_acquire
+            await gemini_acquire()
             res = await orchestrator_agent.run(prompt, deps=deps)
             report = res.output
             # Ensure Python-controlled metadata fields are set correctly
@@ -287,11 +310,24 @@ async def run_orchestrator(
         except Exception as sem_err:
             log.error(f"Claim semantic upsert failed: {sem_err}")
 
-        # Write #1: Raw Blackboard audit trail (synchronous connection)
-        conn = sqlite3.connect(db_path)
-        conn.execute("PRAGMA journal_mode=WAL")
-        bb.flush_to_sqlite(conn)
-        conn.close()
+        # Write #1: Raw Blackboard audit trail (synchronous connection offloaded to thread to prevent event-loop blocking)
+        def _sync_write_final():
+            conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("BEGIN IMMEDIATE")
+                bb.flush_to_sqlite(conn)
+                conn.execute("COMMIT")
+            except Exception as write_err:
+                try:
+                    conn.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise write_err
+            finally:
+                conn.close()
+
+        await asyncio.to_thread(_sync_write_final)
 
         # Write #2: Structured fields for analytics (asynchronous connection)
         try:

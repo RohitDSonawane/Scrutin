@@ -20,14 +20,22 @@ async def log_calibration_entry(
     actual_outcome: "correct" | "incorrect" | None (unknown, for live runs)
     Called by the Orchestrator after ground-truth test runs.
     """
-    async with aiosqlite.connect(db_path) as db:
+    async with aiosqlite.connect(db_path, timeout=30.0, isolation_level=None) as db:
         await db.execute("PRAGMA journal_mode=WAL")
-        await db.execute(
-            """INSERT INTO calibration_log (run_id, agent, stated_confidence, actual_outcome, created_at)
-               VALUES (?, ?, ?, ?, datetime('now'))""",
-            (run_id, agent, stated_confidence, actual_outcome)
-        )
-        await db.commit()
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            await db.execute(
+                """INSERT INTO calibration_log (run_id, agent, stated_confidence, actual_outcome, created_at)
+                   VALUES (?, ?, ?, ?, datetime('now'))""",
+                (run_id, agent, stated_confidence, actual_outcome)
+            )
+            await db.execute("COMMIT")
+        except Exception as e:
+            try:
+                await db.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise e
 
 
 def compute_ece(db_path: str = "scrutin.db") -> float:
@@ -36,7 +44,7 @@ def compute_ece(db_path: str = "scrutin.db") -> float:
     A well-calibrated system: ECE < 0.05 (right ~80% of time when it says 80%).
     Returns 0.0 if no calibration data exists yet.
     """
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     # Check if table exists first before querying to avoid operational errors
     table_exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_log'"
@@ -73,7 +81,7 @@ def compute_ece(db_path: str = "scrutin.db") -> float:
 def print_calibration_report(db_path: str = "scrutin.db") -> None:
     ece = compute_ece(db_path)
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
     # Check if table exists first
     table_exists = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_log'"

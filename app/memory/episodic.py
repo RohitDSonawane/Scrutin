@@ -24,19 +24,27 @@ async def record_run(
     Write a completed run to episodic memory.
     Called by the Orchestrator at run completion — even on crash (use try/finally).
     """
-    async with aiosqlite.connect(db_path) as db:
+    async with aiosqlite.connect(db_path, timeout=30.0, isolation_level=None) as db:
         await db.execute("PRAGMA journal_mode=WAL")
-        await db.execute(
-            """INSERT OR REPLACE INTO episodic_runs
-               (run_id, raw_input, input_type, overall_verdict, credibility_score,
-                confidence, data_json, iterations_used, budget_exhausted,
-                processing_time_seconds, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
-            (run_id, raw_input, input_type, overall_verdict, credibility_score,
-             confidence, data_json, iterations_used, int(budget_exhausted),
-             processing_time_seconds)
-        )
-        await db.commit()
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            await db.execute(
+                """INSERT OR REPLACE INTO episodic_runs
+                   (run_id, raw_input, input_type, overall_verdict, credibility_score,
+                    confidence, data_json, iterations_used, budget_exhausted,
+                    processing_time_seconds, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))""",
+                (run_id, raw_input, input_type, overall_verdict, credibility_score,
+                 confidence, data_json, iterations_used, int(budget_exhausted),
+                 processing_time_seconds)
+            )
+            await db.execute("COMMIT")
+        except Exception as e:
+            try:
+                await db.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise e
 
 
 async def find_similar_run(
@@ -58,7 +66,7 @@ async def find_similar_run(
     where_clauses = " AND ".join([f"raw_input LIKE ?" for _ in search_terms])
     params = [f"%{term}%" for term in search_terms]
 
-    async with aiosqlite.connect(db_path) as db:
+    async with aiosqlite.connect(db_path, timeout=30.0) as db:
         await db.execute("PRAGMA journal_mode=WAL")
         db.row_factory = aiosqlite.Row
         async with db.execute(
@@ -75,7 +83,7 @@ async def find_similar_run(
 
 async def get_run_stats(db_path: str = DB_PATH_DEFAULT) -> dict:
     """Stats for the `python -m app.cli stats` command."""
-    async with aiosqlite.connect(db_path) as db:
+    async with aiosqlite.connect(db_path, timeout=30.0) as db:
         await db.execute("PRAGMA journal_mode=WAL")
         total = (await (await db.execute("SELECT COUNT(*) FROM episodic_runs")).fetchone())[0]
         verdicts = {}

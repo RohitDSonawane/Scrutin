@@ -106,6 +106,7 @@ def test_flush_to_sqlite_roundtrip(tmp_path):
 
     bb = Blackboard(run_id="flush-test", raw_input="A test claim", iterations=3)
     bb.flush_to_sqlite(conn)
+    conn.commit()
 
     row = conn.execute("SELECT run_id, iterations_used FROM episodic_runs WHERE run_id='flush-test'").fetchone()
     assert row[0] == "flush-test"

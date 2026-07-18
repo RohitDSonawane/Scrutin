@@ -80,4 +80,3 @@ class Blackboard(BaseModel):
             (self.run_id, self.raw_input, self.input_type,
              self.model_dump_json(), self.iterations)
         )
-        conn.commit()

@@ -70,15 +70,23 @@ async def upsert_claim(
         )
         # Write metadata to SQLite claim_similarity_cache (Table 4 in database-schema.md)
         import aiosqlite
-        async with aiosqlite.connect(db_path) as db:
+        async with aiosqlite.connect(db_path, timeout=30.0, isolation_level=None) as db:
             await db.execute("PRAGMA journal_mode=WAL")
-            await db.execute(
-                """INSERT OR REPLACE INTO claim_similarity_cache
-                   (claim_id, claim_text, pinecone_vector_id, run_id, verdict, created_at)
-                   VALUES (?, ?, ?, ?, ?, datetime('now'))""",
-                (claim_id, claim_text[:500], pinecone_vector_id, run_id, verdict)
-            )
-            await db.commit()
+            await db.execute("BEGIN IMMEDIATE")
+            try:
+                await db.execute(
+                    """INSERT OR REPLACE INTO claim_similarity_cache
+                       (claim_id, claim_text, pinecone_vector_id, run_id, verdict, created_at)
+                       VALUES (?, ?, ?, ?, ?, datetime('now'))""",
+                    (claim_id, claim_text[:500], pinecone_vector_id, run_id, verdict)
+                )
+                await db.execute("COMMIT")
+            except Exception as e:
+                try:
+                    await db.execute("ROLLBACK")
+                except Exception:
+                    pass
+                raise e
     except Exception as e:
         from loguru import logger
         logger.warning(f"Pinecone upsert failed (non-fatal): {e}")
