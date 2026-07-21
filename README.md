@@ -62,6 +62,8 @@ graph TD
 
 ## Installation & Setup
 
+> 📘 **Detailed Guide:** For step-by-step instructions on obtaining API keys for each model provider (Google Gemini, Groq, Serper, Google Fact Check), see [Docs/SETUP_GUIDE.md](file:///d:/ENGR/Scrutin/Docs/SETUP_GUIDE.md).
+
 ### Prerequisites
 *   Python 3.11 or 3.12
 *   Optional: `ffmpeg` (for media file transcriptions)
