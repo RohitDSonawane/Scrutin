@@ -1,0 +1,176 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Scrutin — Multi-agent misinformation verification API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: verification
+    description: Claim verification operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /verify:
+    post:
+      operationId: verify
+      tags: [verification]
+      summary: Verify a claim or article URL
+      description: |
+        Runs the full Scrutin multi-agent pipeline on a text claim or article URL.
+        Provide either `claim` (plain text assertion) or `url` (article URL).
+        Processing typically takes 5–30 seconds.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VerifyRequest"
+      responses:
+        "200":
+          description: Verification complete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VerificationReport"
+        "422":
+          description: Missing claim or url
+        "500":
+          description: Orchestrator error
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    VerifyRequest:
+      type: object
+      properties:
+        claim:
+          type: string
+          nullable: true
+          description: Plain text claim to verify
+          example: "The Eiffel Tower was built in 1889"
+        url:
+          type: string
+          nullable: true
+          description: URL of an article to verify
+          example: "https://example.com/article"
+      # At least one of claim or url must be provided (enforced server-side)
+
+    EvidenceItem:
+      type: object
+      required:
+        - source_id
+        - url
+        - snippet
+        - source_domain
+        - relevance_score
+        - retrieval_backend
+      properties:
+        source_id:
+          type: string
+        url:
+          type: string
+        title:
+          type: string
+          default: ""
+        snippet:
+          type: string
+        source_domain:
+          type: string
+        published_date:
+          type: string
+          nullable: true
+        relevance_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+        retrieval_backend:
+          type: string
+
+    VerificationReport:
+      type: object
+      required:
+        - run_id
+        - raw_input
+        - overall_verdict
+        - credibility_score
+        - confidence
+        - claim_findings
+        - adversarial_summary
+        - evidence_used
+        - source_credibility_notes
+        - processing_time_seconds
+        - iterations_used
+        - budget_exhausted
+      properties:
+        run_id:
+          type: string
+          description: Unique identifier for this verification run
+        raw_input:
+          type: string
+          description: The original claim or URL that was verified
+        overall_verdict:
+          type: string
+          enum: [true, false, misleading, unverifiable, inconclusive]
+          description: Final verdict from the multi-agent system
+        credibility_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 100
+          description: Credibility score from 0 (false) to 100 (true)
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          description: Model confidence in the verdict (0.0–1.0)
+        claim_findings:
+          type: array
+          items:
+            type: object
+          description: Per-agent findings from the blackboard
+        adversarial_summary:
+          type: string
+          description: Summary of the adversarial red-team critique
+        evidence_used:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceItem"
+        source_credibility_notes:
+          type: string
+          description: Notes from the source credibility agent
+        processing_time_seconds:
+          type: number
+          format: float
+          description: Total wall-clock time for the verification run
+        iterations_used:
+          type: integer
+          description: Number of orchestrator loop iterations
+        budget_exhausted:
+          type: boolean
+          description: Whether the iteration budget was exhausted

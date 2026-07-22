@@ -1,0 +1,20 @@
+# Normalize line endings in the repository
+* text=auto
+
+# Force LF for shell scripts
+*.sh text eol=lf
+
+# Force LF for YAML/JSON config files
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+
+# Binary files
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.mp4 binary
+*.webm binary
+*.wasm binary

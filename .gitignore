@@ -1,26 +1,79 @@
-# Vendor dependency folder
-app/tools/lib/
-
-# Scrutin metadata, documentation, and references (per user rule)
-Docs/
-Implementation/
-Refrences/
-
-# Local SQLite databases and WAL files
-*.db
-*.db-journal
-*.db-wal
-scrutin.db
-
-# Environment and secrets
-.env
-
-# Python compilation and caches
+# ── Python / Backend ────────────────────────────────────────────────────────
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 
 # Virtual environments
 .venv/
 venv/
 ENV/
+env/
+env.bak/
+venv.bak/
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+scrutin.db
+
+# Coverage
+.coverage
+htmlcov/
+coverage.xml
+
+# ── Node / Frontend ──────────────────────────────────────────────────────────
+node_modules/
+dist/
+dist-ssr/
+*.local
+.cache/
+.turbo/
+
+# pnpm
+pnpm-debug.log*
+
+# Build output
+frontend/artifacts/scrutin/dist/
+frontend/artifacts/api-server/dist/
+
+# ── Environment / Secrets ────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+backend/.env
+frontend/artifacts/scrutin/.env
+frontend/artifacts/scrutin/.env.local
+
+# ── IDE / OS ─────────────────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Project-specific ─────────────────────────────────────────────────────────
+backend/Docs/
+backend/Implementation/
+backend/Refrences/
+regression_results.txt
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+*.log
+logs/
+pino-pretty/

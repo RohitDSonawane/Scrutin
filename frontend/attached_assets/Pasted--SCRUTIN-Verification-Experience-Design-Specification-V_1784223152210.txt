@@ -1,0 +1,711 @@
+# SCRUTIN — Verification Experience Design Specification (V1)
+
+> This document defines everything the user sees after pressing the Verify button and before the final report appears.
+
+The goal is NOT to create a loading screen.
+
+The goal is to transform waiting into curiosity.
+
+The user should never feel that the system is "thinking."
+
+Instead, the system should feel alive.
+
+Every second should communicate progress, transparency and trust.
+
+---
+
+# 1. Philosophy
+
+Most AI products show
+
+Loading...
+
+Thinking...
+
+Generating...
+
+Scrutin should never use these.
+
+Verification is a process.
+
+The user should experience that process.
+
+Every screen should answer
+
+"What is happening right now?"
+
+instead of
+
+"Please wait."
+
+---
+
+# 2. Overall Interaction
+
+User pastes
+
+↓
+
+Presses Verify
+
+↓
+
+Input gently collapses upward
+
+↓
+
+Background slightly darkens
+
+↓
+
+Hero text fades
+
+↓
+
+Verification Workspace expands
+
+↓
+
+Card 01 slides into focus
+
+↓
+
+Cards 02–04 remain stacked behind
+
+↓
+
+Each completed card slides away
+
+↓
+
+Next card enters
+
+↓
+
+Final report appears
+
+Never use page transitions.
+
+Everything should happen inside one continuous canvas.
+
+---
+
+# 3. Layout
+
+Viewport
+
+Entire browser
+
+Left
+
+Verification card
+
+(70%)
+
+Right
+
+Upcoming cards stack
+
+(30%)
+
+Cards should overlap.
+
+Only one card is active.
+
+The others should peek from behind.
+
+Exactly like premium keynote slides.
+
+---
+
+# 4. Card Stack Animation
+
+Card 01
+
+Centered.
+
+Card 02
+
+Visible 25%.
+
+Slides from RIGHT.
+
+Card 03
+
+Visible 18%.
+
+Slides from BOTTOM.
+
+Card 04
+
+Visible 15%.
+
+Slides from LEFT.
+
+When
+
+Card 01 completes
+
+↓
+
+moves left
+
+↓
+
+fades
+
+↓
+
+slightly rotates
+
+↓
+
+Card 02 smoothly becomes centered.
+
+No abrupt movement.
+
+Duration
+
+700ms
+
+Ease
+
+easeInOutCubic
+
+---
+
+# 5. Card One
+
+Title
+
+Where is your agent right now?
+
+Purpose
+
+Build trust.
+
+The user understands
+
+what the AI is doing.
+
+---
+
+Visual
+
+Center radial animation.
+
+Soft breathing pulse.
+
+Around it
+
+Evidence Agent
+
+↓
+
+Claim Agent
+
+↓
+
+Source Agent
+
+↓
+
+Forensics
+
+↓
+
+Red Team
+
+↓
+
+Reasoning Core
+
+Current agent
+
+Orange pulse.
+
+Others
+
+Gray.
+
+Finished
+
+Green check.
+
+Waiting
+
+Muted.
+
+Each transition
+
+1.5–2s.
+
+---
+
+Timeline
+
+✓ Parsing Claim
+
+↓
+
+✓ Extracting Claims
+
+↓
+
+✓ Searching Sources
+
+↓
+
+Scanning Government Databases
+
+↓
+
+Waiting
+
+↓
+
+Waiting
+
+Never fake speed.
+
+Progress must reflect reality.
+
+---
+
+Bottom
+
+Estimated remaining
+
+18 seconds
+
+Updates live.
+
+---
+
+# 6. Card Two
+
+Title
+
+What others are asking right now
+
+Purpose
+
+Occupy curiosity.
+
+NOT recommendations.
+
+NOT advertisements.
+
+Display
+
+real related searches.
+
+Example
+
+Did Elon Musk buy Twitter?
+
+↓
+
+How much did Elon pay?
+
+↓
+
+Why was Twitter renamed?
+
+↓
+
+Original SEC filing
+
+Each item
+
+Search count
+
+Updated
+
+Trending
+
+Animated.
+
+Cards should slide upward every few seconds.
+
+Feels alive.
+
+---
+
+Bottom CTA
+
+Explore all related searches
+
+No navigation.
+
+Opens drawer.
+
+---
+
+# 7. Card Three
+
+Title
+
+Trending around this story
+
+Purpose
+
+Provide surrounding context.
+
+NOT the same news.
+
+Related ecosystem.
+
+Example
+
+If user verifies
+
+Ukraine claim
+
+Display
+
+Latest UN statement
+
+↓
+
+Reuters article
+
+↓
+
+BBC coverage
+
+↓
+
+Official Government response
+
+↓
+
+Fact-check updates
+
+Each card
+
+Source logo
+
+Category
+
+Time
+
+Headline
+
+No clickbait.
+
+No thumbnails.
+
+Editorial layout.
+
+---
+
+Background
+
+Very subtle world map grid.
+
+Opacity
+
+5%
+
+---
+
+# 8. Card Four
+
+Title
+
+Potential misinformation near you
+
+Purpose
+
+Regional awareness.
+
+NOT fear.
+
+Example
+
+Pune
+
+↓
+
+AI-generated flood images
+
+High Spread
+
+↓
+
+WhatsApp election rumours
+
+Medium Spread
+
+↓
+
+Old bridge collapse video
+
+Currently resurfacing
+
+Each card
+
+Severity
+
+Spread
+
+Verified
+
+Updated
+
+No alarming colors.
+
+Use
+
+Amber
+
+Blue
+
+Gray
+
+Never red.
+
+---
+
+Bottom
+
+See regional misinformation report
+
+---
+
+# 9. Agent Indicator
+
+Never show
+
+Loading...
+
+Instead
+
+Current Agent
+
+Evidence Agent
+
+↓
+
+Blinking icon
+
+↓
+
+Searching
+
+↓
+
+Government archives
+
+↓
+
+27 sources
+
+↓
+
+3 contradictions found
+
+↓
+
+Cross-checking
+
+Changes every second.
+
+Feels alive.
+
+---
+
+# 10. Microinteractions
+
+Icons
+
+Pulse
+
+Cards
+
+Float
+
+Timeline
+
+Draw itself
+
+Progress
+
+Morph
+
+Agent
+
+Breathes
+
+Numbers
+
+Count upward
+
+Charts
+
+Animate naturally
+
+Everything
+
+Subtle.
+
+Nothing flashy.
+
+---
+
+# 11. Scroll Behavior
+
+The user cannot manually scroll.
+
+Cards control scrolling.
+
+Each completion
+
+Auto-scrolls
+
+to next stage.
+
+Feels cinematic.
+
+---
+
+# 12. Timing
+
+Card One
+
+5–7s
+
+↓
+
+Card Two
+
+4s
+
+↓
+
+Card Three
+
+4s
+
+↓
+
+Card Four
+
+3–5s
+
+↓
+
+Report
+
+If verification finishes early
+
+Immediately transition.
+
+Never artificially delay.
+
+---
+
+# 13. Premium Details
+
+Every card
+
+24px radius.
+
+Soft cream background.
+
+Extremely soft shadow.
+
+No gradients.
+
+Large whitespace.
+
+Editorial typography.
+
+Maximum
+
+3 colors.
+
+Orange
+
+Black
+
+Gray
+
+---
+
+# 14. Motion Language
+
+Nothing should feel mechanical.
+
+Everything should feel organic.
+
+Cards
+
+Slide
+
+Scale
+
+Fade
+
+Background
+
+Slow parallax
+
+Pulse
+
+20% opacity
+
+Very soft.
+
+Apple keynote quality.
+
+---
+
+# 15. What Must Never Exist
+
+❌ Spinners
+
+❌ Skeleton loaders
+
+❌ Fake percentages
+
+❌ "AI Thinking"
+
+❌ Typing animation
+
+❌ Neon
+
+❌ Hacker effects
+
+❌ Matrix rain
+
+❌ Random particles
+
+❌ Loading bars
+
+❌ Fake progress
+
+❌ ChatGPT style reasoning stream
+
+Verification must feel
+
+calm
+
+professional
+
+credible.
+
+---
+
+# Final User Emotion
+
+The user should never think
+
+"I'm waiting."
+
+Instead they should think
+
+"I understand exactly what Scrutin is doing, I discovered useful related information while it worked, and I trust the process because it is transparent."
+
+The waiting time itself becomes part of the product experience.

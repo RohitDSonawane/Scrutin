@@ -1,0 +1,864 @@
+# SCRUTIN — Multi-Agent Architecture Showcase Design Specification (V1)
+
+> This document defines the architecture showcase immediately after the Verification Experience.
+> Its purpose is to visually explain Scrutin's verification engine through cinematic storytelling rather than documentation.
+
+The user should leave this section thinking
+
+"This isn't one AI.
+
+It's an entire verification system."
+
+---
+
+# 1. Design Philosophy
+
+This section is NOT documentation.
+
+It is NOT a feature list.
+
+It is NOT six feature cards.
+
+It is a story.
+
+Every scroll should feel like
+
+watching one layer of intelligence reveal itself.
+
+Imagine
+
+Apple Product Pages
+
++
+
+Stripe Sessions
+
++
+
+Linear
+
++
+
+Arc Browser
+
+instead of
+
+marketing cards.
+
+---
+
+# 2. Scroll Behaviour
+
+This section occupies
+
+400vh
+
+The viewport stays pinned.
+
+The page itself doesn't move.
+
+Instead
+
+cards move.
+
+Timeline
+
+Card 01
+
+↓
+
+Card 02
+
+↓
+
+Card 03
+
+↓
+
+Card 04
+
+↓
+
+Card 05
+
+↓
+
+Card 06
+
+↓
+
+Overview
+
+Each scroll
+
+pushes
+
+one card away
+
+while the next arrives.
+
+Never jump.
+
+Everything should interpolate.
+
+---
+
+# 3. Layout
+
+Entire viewport
+
+Center aligned.
+
+Background stays fixed.
+
+Cards occupy
+
+70%
+
+viewport width.
+
+Around
+
+900px
+
+height
+
+520px
+
+Cards float above background.
+
+Large breathing room.
+
+---
+
+# 4. Layering
+
+Only one card is active.
+
+Previous card
+
+10%
+
+visible.
+
+Next card
+
+20%
+
+visible.
+
+Everything else hidden.
+
+Feels like
+
+Apple keynote slides.
+
+---
+
+# 5. Motion Language
+
+Cards
+
+Translate
+
+Scale
+
+Rotate
+
+Opacity
+
+Very subtle.
+
+Never dramatic.
+
+Duration
+
+800ms
+
+Spring easing.
+
+No bounce.
+
+---
+
+# 6. Background
+
+Very soft.
+
+Editorial.
+
+Cream.
+
+Warm gradients.
+
+Subtle light rays.
+
+Almost invisible grid.
+
+Tiny floating particles
+
+2%
+
+opacity.
+
+Nothing distracting.
+
+Background never changes.
+
+Only accent colors change.
+
+---
+
+# 7. Card Sequence
+
+--------------------------------
+
+CARD ONE
+
+--------------------------------
+
+Theme
+
+Understand
+
+Accent
+
+Warm Gold
+
+Title
+
+Understand the claim.
+
+Subtitle
+
+Every verification begins by separating facts from framing.
+
+Large Visual
+
+Animated sentence.
+
+As scroll progresses
+
+Sentence splits into
+
+Atomic claims.
+
+Each claim
+
+Receives tag
+
+Fact
+
+Opinion
+
+Statistic
+
+Quote
+
+Prediction
+
+Claim cards gently separate.
+
+Right side
+
+Small explanation.
+
+Bottom
+
+One sentence
+
+Nothing can be verified until it becomes measurable.
+
+---
+
+Animation
+
+Sentence
+
+↓
+
+Highlights
+
+↓
+
+Breaks apart
+
+↓
+
+Individual claim cards
+
+↓
+
+Lock into grid.
+
+---
+
+--------------------------------
+
+CARD TWO
+
+--------------------------------
+
+Theme
+
+Search
+
+Accent
+
+Blue
+
+Title
+
+Corroborate with evidence.
+
+Visual
+
+Network of sources.
+
+Government
+
+↓
+
+Research
+
+↓
+
+Reuters
+
+↓
+
+BBC
+
+↓
+
+Archive
+
+↓
+
+Official Statements
+
+Lines connect.
+
+Sources glow one by one.
+
+Contradictions highlighted.
+
+Supporting evidence grows.
+
+Everything builds gradually.
+
+Bottom
+
+Evidence isn't collected.
+
+It's weighed.
+
+---
+
+Animation
+
+Nodes appear.
+
+↓
+
+Connections grow.
+
+↓
+
+Weights change.
+
+↓
+
+Contradictions pulse.
+
+---
+
+--------------------------------
+
+CARD THREE
+
+--------------------------------
+
+Theme
+
+Authenticate
+
+Accent
+
+Emerald
+
+Title
+
+Verify the media itself.
+
+Visual
+
+Image.
+
+↓
+
+Metadata.
+
+↓
+
+Frame extraction.
+
+↓
+
+Deepfake detection.
+
+↓
+
+Audio.
+
+↓
+
+Geolocation.
+
+Everything converges.
+
+Final
+
+Authenticity badge.
+
+Instead of showing technical jargon
+
+show visual progression.
+
+---
+
+Bottom
+
+A real image can still tell a false story.
+
+---
+
+--------------------------------
+
+CARD FOUR
+
+--------------------------------
+
+Theme
+
+Challenge
+
+Accent
+
+Orange
+
+Title
+
+Attack our own conclusion.
+
+Visual
+
+Split screen.
+
+Left
+
+Current verdict.
+
+Right
+
+Red Team.
+
+Counter evidence appears.
+
+Alternative explanation.
+
+Counter argument.
+
+Evidence score changes.
+
+One side wins.
+
+Bottom
+
+Every claim deserves an opponent.
+
+---
+
+Animation
+
+Current verdict
+
+↓
+
+Counter appears
+
+↓
+
+Debate
+
+↓
+
+Confidence updates
+
+↓
+
+Winner
+
+---
+
+--------------------------------
+
+CARD FIVE
+
+--------------------------------
+
+Theme
+
+Reason
+
+Accent
+
+Purple
+
+Title
+
+Combine everything.
+
+Visual
+
+Six streams
+
+merge.
+
+Evidence
+
+↓
+
+Sources
+
+↓
+
+Forensics
+
+↓
+
+Red Team
+
+↓
+
+Claim
+
+↓
+
+History
+
+Everything flows
+
+into
+
+Reasoning Core.
+
+Inside
+
+Confidence meter grows.
+
+Final
+
+Verdict.
+
+Bottom
+
+Truth emerges from independent agreement.
+
+---
+
+Animation
+
+Streams converge.
+
+↓
+
+Reasoning core spins.
+
+↓
+
+Confidence builds.
+
+↓
+
+Verdict appears.
+
+---
+
+--------------------------------
+
+CARD SIX
+
+--------------------------------
+
+Theme
+
+Explain
+
+Accent
+
+Neutral
+
+Title
+
+Show your work.
+
+Visual
+
+Final report.
+
+Confidence.
+
+Timeline.
+
+Sources.
+
+Contradictions.
+
+Reasoning.
+
+Every element expandable.
+
+Bottom
+
+Trust requires transparency.
+
+---
+
+Animation
+
+Entire report unfolds.
+
+One section at a time.
+
+---
+
+# 8. Visual Language
+
+Cards
+
+Large radius
+
+28px
+
+Background
+
+rgba(255,255,255,0.82)
+
+Blur
+
+30px
+
+Border
+
+1px
+
+Shadow
+
+Very soft.
+
+Never floating glass.
+
+Feels like paper.
+
+---
+
+# 9. Typography
+
+Heading
+
+Canela
+
+64px
+
+Body
+
+Inter
+
+22px
+
+Section Label
+
+Inter Medium
+
+13px
+
+Card Number
+
+Very subtle.
+
+Opacity
+
+35%
+
+Example
+
+01 / 06
+
+---
+
+# 10. Illustration Style
+
+Avoid
+
+3D robots.
+
+AI brains.
+
+Circuit boards.
+
+Blockchain cubes.
+
+Neural networks.
+
+Instead
+
+Use
+
+Editorial system diagrams.
+
+Clean nodes.
+
+Flow lines.
+
+Structured layouts.
+
+Minimal illustrations.
+
+Everything geometric.
+
+Everything meaningful.
+
+---
+
+# 11. Scroll Indicators
+
+Right side
+
+Tiny progress rail.
+
+01
+
+02
+
+03
+
+04
+
+05
+
+06
+
+Current section highlighted.
+
+Smooth interpolation.
+
+---
+
+# 12. Microinteractions
+
+Hover
+
+Slight lift.
+
+Node
+
+Pulse.
+
+Connections
+
+Draw.
+
+Charts
+
+Animate.
+
+Confidence
+
+Count.
+
+Cards
+
+Glow softly.
+
+No flashy effects.
+
+---
+
+# 13. Performance
+
+All animations
+
+GPU accelerated.
+
+Transform.
+
+Opacity.
+
+Avoid layout shifts.
+
+Images lazy loaded.
+
+Maintain
+
+60 FPS.
+
+---
+
+# 14. Accessibility
+
+Reduce Motion
+
+↓
+
+Animations replaced
+
+with fades.
+
+Keyboard navigation
+
+supported.
+
+Screen reader
+
+labels included.
+
+---
+
+# 15. What Must Never Exist
+
+❌ Feature cards
+
+❌ Long paragraphs
+
+❌ Generic AI icons
+
+❌ Decorative graphics
+
+❌ Random gradients
+
+❌ Fake dashboards
+
+❌ Neon
+
+❌ Matrix
+
+❌ Sci-fi
+
+❌ Marketing buzzwords
+
+❌ Information overload
+
+---
+
+# Final Emotion
+
+The user should finish this section thinking
+
+"I now understand exactly how Scrutin verifies information.
+
+Every stage has a purpose.
+
+Every conclusion can be explained.
+
+This feels less like an AI chatbot and more like a digital investigation."

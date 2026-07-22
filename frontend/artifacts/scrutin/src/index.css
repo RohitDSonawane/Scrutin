@@ -1,0 +1,82 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500&family=Plus+Jakarta+Sans:wght@300&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-border: var(--border);
+  --color-input: var(--border);
+  --color-ring: hsl(var(--accent));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--primary-foreground));
+
+  --font-sans: var(--app-font-sans);
+  --font-serif: var(--app-font-serif);
+  --font-jakarta: "Plus Jakarta Sans", "Georgia", serif;
+  --font-aeonik: "DM Sans Variable", "DM Sans", system-ui, sans-serif;
+}
+
+:root {
+  --background: 36 43% 98%; /* #FCFAF7 */
+  --foreground: 0 0% 9%; /* #171717 */
+  --muted: 38 33% 95%; /* #F6F3EE */
+  --muted-foreground: 0 0% 40%; /* #666666 */
+  --border: rgba(0, 0, 0, 0.08);
+  
+  --primary: 0 0% 9%;
+  --primary-foreground: 0 0% 100%;
+  
+  --accent: 24 54% 52%; /* #C67845 */
+  --success: 143 48% 45%; /* #3BAA65 */
+
+  --app-font-sans: 'Inter', sans-serif;
+  --app-font-serif: 'Instrument Serif', serif;
+}
+
+.dark {
+  /* Minimal dark mode as spec demands explicit colors mostly, but keeping it functional just in case */
+  --background: 0 0% 9%;
+  --foreground: 36 43% 98%;
+  --muted: 0 0% 15%;
+  --muted-foreground: 0 0% 60%;
+  --border: rgba(255, 255, 255, 0.08);
+  --primary: 0 0% 100%;
+  --primary-foreground: 0 0% 9%;
+  --accent: 24 54% 52%;
+}
+
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+    border: none;
+    outline: none;
+  }
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply font-sans antialiased bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+}

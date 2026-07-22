@@ -1,0 +1,530 @@
+# SCRUTIN — Hero Section Design Specification (V1)
+
+> This document defines only the Hero section of the Scrutin landing page.
+> It does NOT describe the entire homepage.
+> The objective is to recreate a premium editorial AI landing page similar in craftsmanship to the highest-end AI startups, while establishing Scrutin's own visual identity.
+
+---
+
+# 1. Design Philosophy
+
+The Hero must communicate **trust before intelligence**.
+
+Users visiting Scrutin are not looking for another AI chatbot.
+
+They are trying to determine whether something is true.
+
+Therefore the hero should feel like
+
+• calm
+
+• trustworthy
+
+• premium
+
+• editorial
+
+• modern
+
+• sophisticated
+
+NOT
+
+• cyberpunk
+
+• hacker
+
+• neon
+
+• futuristic dashboard
+
+• glassmorphism overload
+
+The emotional response should be
+
+"I trust this."
+
+rather than
+
+"This looks like AI."
+
+---
+
+# 2. Inspiration
+
+Visual language should take inspiration from
+
+- Incredible AI
+- Linear
+- Raycast
+- Vercel
+- Stripe Sessions
+- Notion AI
+
+while creating an original composition.
+
+Never copy layouts directly.
+
+---
+
+# 3. Color System
+
+Primary Background
+
+#FCFAF7
+
+Secondary Background
+
+#F6F3EE
+
+Text
+
+#171717
+
+Secondary Text
+
+#666666
+
+Borders
+
+rgba(0,0,0,0.08)
+
+Accent
+
+#C67845
+
+Hover Accent
+
+#D28753
+
+Success
+
+#3BAA65
+
+Never introduce more than one accent color.
+
+---
+
+# 4. Hero Layout
+
+Desktop Width
+
+1440px
+
+Content Width
+
+1280px
+
+Top Padding
+
+32px
+
+Navbar Height
+
+80px
+
+Hero starts
+
+56px below navbar.
+
+Maximum hero width
+
+820px.
+
+Everything aligned to one center axis.
+
+---
+
+# 5. Navigation
+
+Left
+
+SCRUTIN logo
+
+Center
+
+How it Works
+
+Agents
+
+Methodology
+
+Pricing
+
+Blog
+
+Right
+
+Log In
+
+Primary CTA
+
+Get Started
+
+Buttons use 999px radius.
+
+---
+
+# 6. Badge
+
+Small rounded pill.
+
+Height
+
+34px.
+
+Contains
+
+✨ AI Powered Verification Engine
+
+Read More →
+
+Background
+
+rgba(255,255,255,0.7)
+
+Border
+
+1px rgba(0,0,0,0.08)
+
+---
+
+# 7. Typography
+
+Heading Font
+
+Canela
+
+Fallback
+
+Instrument Serif
+
+Body Font
+
+Inter
+
+Buttons
+
+Inter Medium
+
+Navigation
+
+Inter Medium
+
+Hero
+
+72px
+
+Weight
+
+500
+
+Line Height
+
+92%
+
+Letter Spacing
+
+-3%
+
+---
+
+# 8. Hero Copy
+
+Verify the truth.
+
+Trust with confidence.
+
+The second line should use italic serif.
+
+Accent only on
+
+Trust
+
+Paragraph width
+
+620px
+
+Body size
+
+22px
+
+Weight
+
+400
+
+Line height
+
+165%
+
+---
+
+# 9. Social Proof
+
+4 overlapping avatars.
+
+10K+
+
+Users already trusting Scrutin
+
+Opacity
+
+70%
+
+---
+
+# 10. Input Panel
+
+This is the primary interaction.
+
+Everything on this page should visually point toward it.
+
+Width
+
+720px
+
+Height
+
+210px
+
+Radius
+
+28px
+
+Background
+
+rgba(255,255,255,0.82)
+
+Backdrop Blur
+
+40px
+
+Border
+
+1px rgba(255,255,255,0.9)
+
+Shadow
+
+Very soft
+
+Padding
+
+28px
+
+Placeholder
+
+Ask anything.
+Paste a claim,
+link,
+article,
+tweet,
+image,
+or video...
+
+Bottom left
+
+Attach
+
+Verification Depth
+
+Bottom right
+
+Submit
+
+Circular black button
+
+56px
+
+---
+
+# 11. Quick Actions
+
+Below input
+
+Analyze my claim
+
+Summarize article
+
+Check source credibility
+
+Each pill
+
+Height
+
+42px
+
+Soft border
+
+No gradients
+
+---
+
+# 12. Background Image
+
+The hero image should NOT look like stock photography.
+
+Requirements
+
+Golden Hour
+
+Soft Wildflowers
+
+Rolling Hills
+
+Long Lens
+
+Large Depth of Field
+
+Cream Sky
+
+Warm Lighting
+
+Subtle haze
+
+No people
+
+No roads
+
+No buildings
+
+No animals
+
+No mountains
+
+Foreground flowers blurred.
+
+Middle ground in focus.
+
+Background hills softly faded.
+
+Image occupies lower 45% of hero.
+
+---
+
+# 13. Layering
+
+Top Layer
+
+Navbar
+
+↓
+
+Headline
+
+↓
+
+Input
+
+↓
+
+Action Pills
+
+↓
+
+Landscape
+
+↓
+
+Logos
+
+Everything floats above the background naturally.
+
+---
+
+# 14. Logos
+
+Centered.
+
+Gray.
+
+60% opacity.
+
+Even spacing.
+
+No containers.
+
+---
+
+# 15. Motion
+
+Navbar
+
+Fade Down
+
+Badge
+
+Fade
+
+Heading
+
+Line Reveal
+
+Paragraph
+
+Fade
+
+Input
+
+Scale
+
+Background
+
+Parallax
+
+Flowers
+
+Move slower than foreground.
+
+---
+
+# 16. Accessibility
+
+Minimum contrast
+
+WCAG AA
+
+All buttons keyboard accessible.
+
+Focus ring
+
+Accent color.
+
+---
+
+# 17. What Must Never Be Used
+
+No glowing neon.
+
+No floating AI brains.
+
+No random particles.
+
+No blockchain graphics.
+
+No circuit board backgrounds.
+
+No holograms.
+
+No sci-fi UI.
+
+No unnecessary glass cards.
+
+No excessive gradients.
+
+No AI-generated clutter.
+
+Minimalism wins.
+
+---
+
+# Final Goal
+
+When someone lands on Scrutin for the first time, they should immediately feel:
+
+• This is serious.
+
+• This is trustworthy.
+
+• This feels like Apple × Stripe × Perplexity.
+
+Only after that should they discover the underlying multi-agent intelligence.
