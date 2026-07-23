@@ -30,6 +30,7 @@ async def run_orchestrator(
     config: dict | None = None,
     db_path: str = "scrutin.db",
     run_id: str | None = None,
+    on_event: Optional[Callable[[str, dict], Any]] = None,
 ) -> VerificationReport:
     """
     The main orchestration loop. Plain while loop — no graph DSL.
@@ -42,12 +43,23 @@ async def run_orchestrator(
     run_id = run_id or str(uuid.uuid4())[:8]
     start_time = time.time()
 
+    async def emit(event_type: str, data: dict):
+        if on_event:
+            try:
+                res = on_event(event_type, data)
+                if asyncio.iscoroutine(res):
+                    await res
+            except Exception:
+                pass
+
     log = logger.bind(agent="orchestrator")
     log.info(f"Run started: {run_id} | input_type={input_type}")
+    await emit("start", {"run_id": run_id, "raw_input": raw_input, "input_type": input_type})
 
     # Initialize Blackboard
     bb = Blackboard(run_id=run_id, raw_input=raw_input, input_type=input_type)
     bb.plan = planner.initial_plan(bb)
+    await emit("plan", {"iteration": 0, "tasks": [t.model_dump() for t in bb.plan.tasks]})
 
     deps = AgentDeps(blackboard=bb, config=config)
     budget_exhausted = False
@@ -149,6 +161,7 @@ async def run_orchestrator(
 
                     if score >= evaluator.STOPPING_THRESHOLD:
                         log.info("Stopping criteria met [OK]")
+                        await emit("evaluator", {"score": score, "threshold": evaluator.STOPPING_THRESHOLD, "stopping": True})
                         break
 
                     # Not satisfied — reflect and replan
@@ -158,6 +171,8 @@ async def run_orchestrator(
                     
                     old_task_count = len(bb.plan.tasks)
                     bb.plan = planner.replan(bb, ev, reflection)
+                    await emit("plan", {"iteration": bb.iterations, "tasks": [t.model_dump() for t in bb.plan.tasks]})
+                    await emit("evaluator", {"score": score, "threshold": evaluator.STOPPING_THRESHOLD, "stopping": False, "root_cause": reflection.root_cause})
                     if len(bb.plan.tasks) == old_task_count:
                         log.warning("Replan did not add any new tasks — stopping to prevent infinite loop")
                         break
@@ -178,6 +193,7 @@ async def run_orchestrator(
             # Define execution wrapper for each task
             async def run_single_task(t):
                 log.info(f"Iteration {bb.iterations}: Running {t.agent} on claim '{t.claim_id}'")
+                await emit("agent_start", {"agent": t.agent, "claim_id": t.claim_id, "task_id": t.task_id, "iteration": bb.iterations})
                 agent = AGENT_MAP.get(t.agent)
                 if not agent:
                     log.error(f"Unknown agent: {t.agent}")
@@ -212,6 +228,14 @@ async def run_orchestrator(
                         )
                         # Update provisional verdict
                         bb.provisional_verdict = _derive_provisional_verdict(bb)
+                        await emit("finding", {
+                            "agent": t.agent,
+                            "claim_id": t.claim_id,
+                            "stance": finding.stance,
+                            "confidence": finding.confidence,
+                            "rationale": finding.rationale,
+                        })
+                        await emit("provisional_verdict", {"verdict": bb.provisional_verdict})
 
                     elif isinstance(finding, AdversarialCritique):
                         # Convert to Finding so blackboard stores it
@@ -230,6 +254,13 @@ async def run_orchestrator(
                             log.bind(agent="adversarial").warning(
                                 f"verdict_stands=False → '{finding.strongest_counter[:80]}...'"
                             )
+                        await emit("finding", {
+                            "agent": "adversarial",
+                            "claim_id": t.claim_id,
+                            "stance": adv_finding.stance,
+                            "confidence": 1.0,
+                            "rationale": finding.strongest_counter,
+                        })
 
                     elif hasattr(finding, "claims"):
                         # DecompositionOutput — populate atomic_claims
@@ -240,6 +271,9 @@ async def run_orchestrator(
                         log.bind(agent="decomposition").info(
                             f"Decomposed → {len(finding.claims)} claims"
                         )
+                        await emit("decomposition", {
+                            "claims": [{"claim_id": k, "claim_text": v} for k, v in bb.atomic_claims.items()]
+                        })
                 except Exception as e:
                     log.error(f"Agent {t.agent} failed: {e}")
 
@@ -363,6 +397,8 @@ async def run_orchestrator(
             log.info("Skipping episodic cache write because this run was a fallback heuristic.")
 
         log.info(f"Run complete: {run_id} | verdict={report.overall_verdict} | time={elapsed:.1f}s")
+        await emit("final_report", {"report": report.model_dump()})
+        await emit("complete", {"run_id": bb.run_id, "processing_time_seconds": round(elapsed, 2)})
 
     return report
 

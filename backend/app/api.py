@@ -158,6 +158,128 @@ async def verify(body: VerifyRequest):
     # FastAPI will serialize the Pydantic model automatically
     return report
 
+
+import json
+from fastapi.responses import StreamingResponse
+from loguru import logger
+
+
+async def _stream_verification(raw_input: str, input_type: str):
+    queue: asyncio.Queue = asyncio.Queue()
+
+    def _log_sink(message):
+        try:
+            rec = message.record
+            agent = rec["extra"].get("agent", "system")
+            evt = {
+                "type": "log",
+                "data": {
+                    "timestamp": rec["time"].strftime("%H:%M:%S"),
+                    "level": rec["level"].name,
+                    "agent": agent,
+                    "message": rec["message"],
+                },
+            }
+            queue.put_nowait(evt)
+        except Exception:
+            pass
+
+    sink_id = logger.add(_log_sink, level="INFO")
+
+    def on_event(event_type: str, data: dict):
+        try:
+            queue.put_nowait({"type": event_type, "data": data})
+        except Exception:
+            pass
+
+    async def _run_worker():
+        from app.utils.env_validator import validate_env
+        from app.orchestrator.loop import run_orchestrator
+
+        config = validate_env()
+        db_path = os.getenv("SCRUTIN_DB_PATH", "scrutin.db")
+        try:
+            await run_orchestrator(
+                raw_input=raw_input,
+                input_type=input_type,
+                config=config,
+                db_path=db_path,
+                on_event=on_event,
+            )
+        except Exception as exc:
+            queue.put_nowait({"type": "error", "data": {"detail": str(exc)}})
+        finally:
+            queue.put_nowait(None)
+
+    worker_task = asyncio.create_task(_run_worker())
+
+    try:
+        while True:
+            evt = await queue.get()
+            if evt is None:
+                break
+            yield f"data: {json.dumps(evt)}\n\n"
+    finally:
+        logger.remove(sink_id)
+        if not worker_task.done():
+            worker_task.cancel()
+
+
+@app.get(
+    "/api/verify/stream",
+    summary="Verify a claim or URL with SSE real-time streaming",
+    tags=["verification"],
+    response_class=StreamingResponse,
+)
+async def verify_stream_get(claim: Optional[str] = None, url: Optional[str] = None):
+    """
+    Run multi-agent verification and stream real-time events & log traces over SSE.
+    """
+    raw_input = claim or url
+    if not raw_input:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide either 'claim' or 'url' in query parameters.",
+        )
+    input_type = "text" if claim else "url"
+    return StreamingResponse(
+        _stream_verification(raw_input, input_type),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post(
+    "/api/verify/stream",
+    summary="Verify a claim or URL with SSE real-time streaming (POST)",
+    tags=["verification"],
+    response_class=StreamingResponse,
+)
+async def verify_stream_post(body: VerifyRequest):
+    """
+    POST variant for SSE streaming verification.
+    """
+    raw_input = body.claim or body.url
+    if not raw_input:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Provide either 'claim' or 'url' in request body.",
+        )
+    input_type = "text" if body.claim else "url"
+    return StreamingResponse(
+        _stream_verification(raw_input, input_type),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 import sqlite3
 
 class RecentSearch(BaseModel):
