@@ -46,7 +46,25 @@ function MagicBorder({ color, radius = '24px', reverse = false, duration = 4, in
 const NATIVE_W = 1040
 const NATIVE_H = 684
 
-export function Section1Productivity() {
+export interface Section1ProductivityProps {
+  sseData?: {
+    logs: Array<{ timestamp: string; level: string; agent: string; message: string }>;
+    agentStatuses?: {
+      decomposition?: string;
+      evidence?: string;
+      credibility?: string;
+      forensics?: string;
+      adversarial?: string;
+    };
+    currentStatusMessage?: string;
+    provisionalVerdict?: string | null;
+    evaluatorScore?: number | null;
+    findings?: Array<{ agent: string; claim_id: string; stance: string; confidence: number; rationale?: string }>;
+    claims?: Array<{ claim_id: string; claim_text: string }>;
+  };
+}
+
+export function Section1Productivity({ sseData }: Section1ProductivityProps) {
   const sectionRef = useRef<HTMLElement>(null)
   const [isInView, setIsInView] = useState(false)
   const isMobile = useIsMobile()
@@ -84,6 +102,16 @@ export function Section1Productivity() {
     obs.observe(el)
     return () => obs.disconnect()
   }, [isMobile])
+
+  const agentItems = [
+    { label: 'Decomposition Agent', status: sseData?.agentStatuses?.decomposition || 'done' },
+    { label: 'Evidence Gathering Agent', status: sseData?.agentStatuses?.evidence || 'running' },
+    { label: 'Source Credibility Agent', status: sseData?.agentStatuses?.credibility || 'pending' },
+    { label: 'Forensics & Geo Agent', status: sseData?.agentStatuses?.forensics || 'pending' },
+    { label: 'Adversarial Critique Agent', status: sseData?.agentStatuses?.adversarial || 'pending' },
+  ]
+
+  const recentLogs = (sseData?.logs || []).slice(-4)
 
   const card = (
     <div
@@ -320,32 +348,33 @@ export function Section1Productivity() {
           >
             <div style={{ padding: '20px 24px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-                <span style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', color: '#C67845', fontWeight: 600 }}>Active Factcheck Node</span>
+                <span style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', color: '#C67845', fontWeight: 600 }}>
+                  Active Factcheck Pipeline
+                </span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#C67845', display: 'inline-block' }} className="animate-ping" />
-                  <span style={{ fontFamily: 'var(--font-aeonik)', fontSize: '12px', color: '#666666' }}>Running...</span>
+                  {sseData?.provisionalVerdict && (
+                    <span style={{ fontFamily: 'var(--font-aeonik)', fontSize: '11px', fontWeight: 600, padding: '2px 8px', borderRadius: '12px', backgroundColor: 'rgba(198,120,69,0.15)', color: '#C67845', textTransform: 'uppercase' }}>
+                      {sseData.provisionalVerdict}
+                    </span>
+                  )}
                 </div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                {[
-                  { text: 'Extracting source metadata', status: 'done' },
-                  { text: 'Reverse lookup & geo-verification', status: 'done' },
-                  { text: 'Cross-referencing database nodes', status: 'active' },
-                  { text: 'Synthesizing factcheck score', status: 'pending' }
-                ].map((item, idx) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
+                {agentItems.map((item, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '5px 0', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
                     <div style={{
                       width: '16px', height: '16px', borderRadius: '50%',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      backgroundColor: item.status === 'done' ? 'rgba(198,120,69,0.15)' : item.status === 'active' ? 'rgba(198,120,69,0.1)' : 'transparent',
+                      backgroundColor: item.status === 'done' ? 'rgba(198,120,69,0.15)' : item.status === 'running' ? 'rgba(198,120,69,0.1)' : 'transparent',
                       border: `1.5px solid ${item.status === 'pending' ? 'rgba(0,0,0,0.15)' : '#C67845'}`
                     }}>
                       {item.status === 'done' && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#C67845' }} />}
-                      {item.status === 'active' && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#C67845' }} className="animate-pulse" />}
+                      {item.status === 'running' && <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#C67845' }} className="animate-pulse" />}
                     </div>
-                    <span style={{ fontFamily: 'var(--font-aeonik)', fontSize: '14px', color: item.status === 'pending' ? '#999999' : '#171717', fontWeight: item.status === 'active' ? 500 : 300 }}>
-                      {item.text}
+                    <span style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', color: item.status === 'pending' ? '#999999' : '#171717', fontWeight: item.status === 'running' ? 500 : 300 }}>
+                      {item.label}
                     </span>
                   </div>
                 ))}
@@ -374,14 +403,22 @@ export function Section1Productivity() {
               boxShadow: 'inset 0 1.5px 0 rgba(255, 255, 255, 0.65), inset 0 -1.5px 3px rgba(100, 70, 30, 0.08), 0 15px 30px rgba(100, 70, 30, 0.05)',
             }}
           >
-            <div style={{ padding: '20px 24px' }}>
-              <h3 style={{ fontFamily: 'var(--font-aeonik)', fontSize: '18px', fontWeight: 500, color: '#171717', margin: 0, marginBottom: '10px', letterSpacing: '-0.2px' }}>Query Extraction</h3>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                {['Reverse Search', 'Meta Extraction', 'Electoral database', 'Viral forward', 'Fake news verification'].map((kw) => (
-                  <span key={kw} style={{ padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(198,120,69,0.18)', backgroundColor: 'rgba(255,255,255,0.4)', fontFamily: 'var(--font-aeonik)', fontSize: '12px', color: '#C67845' }}>
-                    #{kw}
-                  </span>
-                ))}
+            <div style={{ padding: '16px 20px', height: '100%', overflow: 'hidden' }}>
+              <h3 style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', fontWeight: 600, color: '#C67845', margin: 0, marginBottom: '8px', letterSpacing: '0.5px', textTransform: 'uppercase' }}>
+                Live Agent Trace Feed
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '110px', overflowY: 'auto' }}>
+                {recentLogs.length > 0 ? (
+                  recentLogs.map((log, i) => (
+                    <div key={i} style={{ fontFamily: 'monospace', fontSize: '11px', color: '#444444', lineHeight: 1.3 }}>
+                      <span style={{ color: '#C67845', fontWeight: 600 }}>[{log.agent || 'system'}]</span> {log.message}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ fontFamily: 'var(--font-aeonik)', fontSize: '12px', color: '#999999' }}>
+                    {sseData?.currentStatusMessage || 'Awaiting agent stream...'}
+                  </div>
+                )}
               </div>
             </div>
 

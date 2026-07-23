@@ -24,7 +24,17 @@ const STATUS_MESSAGES = [
   "Checking publication history"
 ];
 
-export function VerificationWorkspace({ onCancel, queryText }: { onCancel: () => void; queryText: string }) {
+export function VerificationWorkspace({
+  onCancel,
+  queryText,
+  statusMessage,
+  activeAgent,
+}: {
+  onCancel: () => void;
+  queryText: string;
+  statusMessage?: string;
+  activeAgent?: string;
+}) {
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
   const [statusMessageIndex, setStatusMessageIndex] = useState(0);
 
@@ -152,21 +162,21 @@ export function VerificationWorkspace({ onCancel, queryText }: { onCancel: () =>
             className="w-2 h-2 rounded-full bg-[#C67845]"
           />
           <span className="font-sans font-medium text-[13px] text-[#171717]">
-            Evidence Agent
+            {activeAgent || "Orchestrator Agent"}
           </span>
         </div>
         
         <div className="flex-1 flex justify-center">
           <AnimatePresence mode="wait">
             <motion.span
-              key={statusMessageIndex}
+              key={statusMessage || statusMessageIndex}
               initial={{ opacity: 0, y: 5 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -5 }}
               transition={{ duration: 0.2 }}
-              className="font-sans text-[13px] text-[#666666]"
+              className="font-sans text-[13px] text-[#666666] max-w-[500px] truncate"
             >
-              {STATUS_MESSAGES[statusMessageIndex]}
+              {statusMessage || STATUS_MESSAGES[statusMessageIndex]}
             </motion.span>
           </AnimatePresence>
         </div>

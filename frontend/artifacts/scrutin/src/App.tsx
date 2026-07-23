@@ -18,17 +18,30 @@ const queryClient = new QueryClient();
 function Home() {
   const [verifying, setVerifying] = useState(false);
   const [queryText, setQueryText] = useState("");
-  const { verify, data: verificationResult, isPending, error: verifyError, reset } = useVerification();
+  const {
+    verify,
+    data: verificationResult,
+    isPending,
+    error: verifyError,
+    reset,
+    logs,
+    agentStatuses,
+    currentStatusMessage,
+    provisionalVerdict,
+    evaluatorScore,
+    findings,
+    claims,
+  } = useVerification();
 
   const handleVerify = (text: string) => {
     setQueryText(text);
     setVerifying(true);
-    verify({ claim: text }); // ← real POST /api/verify to the Python backend
+    verify({ claim: text });
   };
 
   const handleCancel = () => {
     setVerifying(false);
-    reset(); // clear any pending/errored mutation state
+    reset();
   };
 
   return (
@@ -109,7 +122,17 @@ function Home() {
                     transition={{ duration: 0.85, ease: [0.76, 0, 0.24, 1] }}
                     className="w-[60vw] h-screen flex-shrink-0 relative overflow-hidden z-10"
                   >
-                    <SpatialScroll />
+                    <SpatialScroll
+                      sseData={{
+                        logs,
+                        agentStatuses,
+                        currentStatusMessage,
+                        provisionalVerdict,
+                        evaluatorScore,
+                        findings,
+                        claims,
+                      }}
+                    />
                   </motion.div>
                 )}
               </AnimatePresence>

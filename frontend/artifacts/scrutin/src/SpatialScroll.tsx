@@ -13,7 +13,25 @@ const SECTION_POSITIONS = [
   { x: 0, y: -1 },
 ]
 
-export function SpatialScroll() {
+export interface SpatialScrollProps {
+  sseData?: {
+    logs: Array<{ timestamp: string; level: string; agent: string; message: string }>;
+    agentStatuses?: {
+      decomposition?: string;
+      evidence?: string;
+      credibility?: string;
+      forensics?: string;
+      adversarial?: string;
+    };
+    currentStatusMessage?: string;
+    provisionalVerdict?: string | null;
+    evaluatorScore?: number | null;
+    findings?: Array<{ agent: string; claim_id: string; stance: string; confidence: number; rationale?: string }>;
+    claims?: Array<{ claim_id: string; claim_text: string }>;
+  };
+}
+
+export function SpatialScroll({ sseData }: SpatialScrollProps) {
   const isMobile = useIsMobile()
   const isPhone = useIsMobile(600)
   const x = useMotionValue(0)
@@ -118,7 +136,7 @@ export function SpatialScroll() {
     }
     return (
       <div ref={scrollContainerRef} style={{ width: '100vw', height: '100vh', overflowY: 'scroll', scrollSnapType: 'y mandatory', backgroundColor: 'transparent', WebkitOverflowScrolling: 'touch', position: 'relative' } as React.CSSProperties}>
-        <div style={{ ...snapSlot, position: 'relative', zIndex: 1 }}><Section1Productivity /></div>
+        <div style={{ ...snapSlot, position: 'relative', zIndex: 1 }}><Section1Productivity sseData={sseData} /></div>
         <div style={{ ...snapSlot, position: 'relative', zIndex: 1 }}><Section2 /></div>
         <div style={{ ...snapSlot, position: 'relative', zIndex: 1 }}><Section3 /></div>
         <div style={{ ...snapSlot, position: 'relative', zIndex: 1 }}><Section4 /></div>
@@ -133,7 +151,7 @@ export function SpatialScroll() {
   return (
     <div style={{ width: '60vw', height: '100vh', overflow: 'hidden', backgroundColor: 'transparent', position: 'relative' }}>
       <motion.div style={{ x, y, position: 'relative', width: '120vw', height: '200vh', willChange: 'transform', zIndex: 1 }}>
-        <div style={{ position: 'absolute', top: '0', left: '0', width: '60vw', height: '100vh' }}><Section1Productivity /></div>
+        <div style={{ position: 'absolute', top: '0', left: '0', width: '60vw', height: '100vh' }}><Section1Productivity sseData={sseData} /></div>
         <div style={{ position: 'absolute', top: '0', left: col2Left, width: '60vw', height: '100vh' }}><Section2 /></div>
         <div style={{ position: 'absolute', top: row2Top, left: col2Left, width: '60vw', height: '100vh' }}><Section3 /></div>
         <div style={{ position: 'absolute', top: row2Top, left: '0', width: '60vw', height: '100vh' }}><Section4 /></div>
