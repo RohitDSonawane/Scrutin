@@ -1,51 +1,31 @@
 from __future__ import annotations
 import asyncio
-from aiolimiter import AsyncLimiter
+import os
+import time
 
-# Groq free tier limit is 30 RPM. We use 25 for safe headroom.
-GROQ_RPM_LIMIT = 25.0
+class StandardRateLimiter:
+    """Standard library rate limiter using asyncio.Lock & time.monotonic()."""
 
-# Gemini free tier limit is 15 RPM. We use 12 for safe headroom.
-GEMINI_RPM_LIMIT = 12.0
+    def __init__(self, rate_period: float) -> None:
+        self.rate_period = rate_period
+        self.last_call = 0.0
+        self.lock = asyncio.Lock()
 
-_groq_limiter: AsyncLimiter | None = None
-_groq_limiter_loop: asyncio.AbstractEventLoop | None = None
+    async def acquire(self) -> None:
+        if "PYTEST_CURRENT_TEST" in os.environ:
+            return
+        async with self.lock:
+            now = time.monotonic()
+            elapsed = now - self.last_call
+            if elapsed < self.rate_period:
+                await asyncio.sleep(self.rate_period - elapsed)
+            self.last_call = time.monotonic()
 
-_gemini_limiter: AsyncLimiter | None = None
-_gemini_limiter_loop: asyncio.AbstractEventLoop | None = None
-
+_groq_limiter = StandardRateLimiter(2.4)    # Groq ~25 RPM headroom
+_gemini_limiter = StandardRateLimiter(5.0)  # Gemini ~12 RPM headroom
 
 async def groq_acquire() -> None:
-    """
-    Acquire a Groq RPM token before every Groq agent call.
-    Blocks until a token is available.
-    Safe against cross-loop/closed-loop warnings in pytest runs.
-    """
-    import os
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        return
-
-    global _groq_limiter, _groq_limiter_loop
-    current_loop = asyncio.get_running_loop()
-    if _groq_limiter is None or _groq_limiter_loop is not current_loop:
-        _groq_limiter = AsyncLimiter(1, time_period=2.4)
-        _groq_limiter_loop = current_loop
     await _groq_limiter.acquire()
 
-
 async def gemini_acquire() -> None:
-    """
-    Acquire a Gemini RPM token before every Gemini agent call.
-    Blocks until a token is available.
-    Safe against cross-loop/closed-loop warnings in pytest runs.
-    """
-    import os
-    if "PYTEST_CURRENT_TEST" in os.environ:
-        return
-
-    global _gemini_limiter, _gemini_limiter_loop
-    current_loop = asyncio.get_running_loop()
-    if _gemini_limiter is None or _gemini_limiter_loop is not current_loop:
-        _gemini_limiter = AsyncLimiter(1, time_period=5.0)
-        _gemini_limiter_loop = current_loop
     await _gemini_limiter.acquire()

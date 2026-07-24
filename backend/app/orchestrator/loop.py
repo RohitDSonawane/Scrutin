@@ -88,19 +88,17 @@ async def run_orchestrator(
         if top["score"] >= 0.95 and is_exact_match:
             log.info(f"Episodic fast-path hit: score={top['score']:.3f} → verdict={top['verdict']}")
             bb.provisional_verdict = top["verdict"]
-            import sqlite3
             import json
-            from app.protocols.messages import VerificationReport
             try:
-                conn = sqlite3.connect(db_path, timeout=30.0)
-                row = conn.execute(
-                    "SELECT data_json FROM episodic_runs WHERE run_id=?",
-                    (top["run_id"],)
-                ).fetchone()
-                conn.close()
-                if row:
-                    data = json.loads(row[0])
-                    cached_report_dict = data.get("final_report")
+                import sqlite3
+                with sqlite3.connect(db_path, timeout=30.0) as conn:
+                    row = conn.execute(
+                        "SELECT data_json FROM episodic_runs WHERE run_id=?",
+                        (top["run_id"],)
+                    ).fetchone()
+
+                if row and row[0]:
+                    cached_report_dict = json.loads(row[0]).get("final_report")
                     if cached_report_dict:
                         report = VerificationReport.model_validate(cached_report_dict)
                         report.run_id = run_id
@@ -108,24 +106,12 @@ async def run_orchestrator(
                         bb.final_report = report.model_dump()
                         
                         def _sync_write_fast():
-                            conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
-                            try:
-                                conn.execute("BEGIN IMMEDIATE")
+                            with sqlite3.connect(db_path, timeout=30.0) as conn:
                                 bb.flush_to_sqlite(conn)
-                                conn.execute("COMMIT")
-                            except Exception as write_err:
-                                try:
-                                    conn.execute("ROLLBACK")
-                                except Exception:
-                                    pass
-                                raise write_err
-                            finally:
-                                conn.close()
 
                         await asyncio.to_thread(_sync_write_fast)
 
                         try:
-                            from app.memory.episodic import record_run
                             await record_run(
                                 run_id=run_id,
                                 raw_input=raw_input,

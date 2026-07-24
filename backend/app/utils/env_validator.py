@@ -1,9 +1,6 @@
 from __future__ import annotations
 import os
 import sys
-from rich.console import Console
-
-console = Console()
 
 REQUIRED_KEYS = {
     "GROQ_API_KEY": "Groq LLM provider — Decomposition, Credibility, Adversarial agents",
@@ -22,13 +19,21 @@ OTHER_KEYS = [
     "CREDIBILITY_MODEL", "FORENSICS_MODEL", "ADVERSARIAL_MODEL", "EMBEDDING_MODEL",
 ]
 
+def _print_colored(text: str, color: str = "") -> None:
+    colors = {
+        "red": "\033[91m\033[1m",
+        "green": "\033[92m",
+        "yellow": "\033[93m",
+        "reset": "\033[0m",
+    }
+    prefix = colors.get(color, "")
+    suffix = colors["reset"] if color else ""
+    sys.stdout.write(f"{prefix}{text}{suffix}\n")
 
 def validate_env() -> dict:
     """
     Validate all required and recommended environment variables.
-    Returns the valid config dict.
-    Aborts if any REQUIRED key is missing.
-    Warns for RECOMMENDED keys.
+    Returns the valid config dict. Aborts if any REQUIRED key is missing.
     """
     config = {}
     has_error = False
@@ -36,35 +41,33 @@ def validate_env() -> dict:
     for key, purpose in REQUIRED_KEYS.items():
         val = os.getenv(key, "").strip()
         if not val:
-            console.print(f"[bold red]✗ MISSING REQUIRED:[/] {key}\n  Purpose: {purpose}")
+            _print_colored(f"✗ MISSING REQUIRED: {key}\n  Purpose: {purpose}", "red")
             has_error = True
         else:
             config[key] = val
-            console.print(f"[green]OK[/] {key}")
+            _print_colored(f"OK {key}", "green")
 
     for key, purpose in RECOMMENDED_KEYS.items():
         val = os.getenv(key, "").strip()
         if not val:
-            console.print(f"[yellow]⚠ OPTIONAL MISSING:[/] {key}\n  Purpose: {purpose}")
+            _print_colored(f"⚠ OPTIONAL MISSING: {key}\n  Purpose: {purpose}", "yellow")
         else:
             config[key] = val
 
-    # Load all Serper rotation keys
     for suffix in ["_2", "_3", "_4"]:
         k = f"SERPER_API_KEY{suffix}"
         val = os.getenv(k, "").strip()
         if val:
             config[k] = val
 
-    # Load all other keys needed by agents/tools
     for key in OTHER_KEYS:
         val = os.getenv(key, "").strip()
         if val:
             config[key] = val
 
     if has_error:
-        console.print("\n[bold red]Cannot start — required API keys are missing.[/]")
-        console.print("Copy [dim].env.example[/] to [dim].env[/] and fill in the missing keys.")
+        _print_colored("\nCannot start — required API keys are missing.", "red")
+        _print_colored("Copy .env.example to .env and fill in the missing keys.", "yellow")
         sys.exit(1)
 
     return config
