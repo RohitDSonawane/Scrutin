@@ -38,7 +38,7 @@ export function Section3() {
         if (entry.isIntersecting && ratio >= enterRatio && !wasVisible) {
           wasVisible = true
           setIsInView(true)
-          } else if (!entry.isIntersecting || ratio < exitRatio) {
+        } else if (!entry.isIntersecting || ratio < exitRatio) {
           wasVisible = false
           setIsInView(false)
         }

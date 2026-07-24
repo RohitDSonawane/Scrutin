@@ -1,7 +1,9 @@
 import { motion, useAnimation } from 'framer-motion'
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useRef } from 'react'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { BlurFadeWords } from '../BlurFadeWords'
+import { useSectionScale, useSectionIntersection, NATIVE_W, NATIVE_H } from './section-utils'
+
 
 const sleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms))
 
@@ -77,48 +79,12 @@ function OrbitRings({ isActive }: { isActive: boolean }) {
     </div>
   )
 }
-
-const NATIVE_W = 1040
-const NATIVE_H = 684
-
 export function Section4() {
   const isMobile = useIsMobile()
-  const [scale, setScale] = useState(1)
   const sectionRef = useRef<HTMLElement>(null)
-  const [isInView, setIsInView] = useState(false)
-  useEffect(() => {
-    const el = sectionRef.current
-    if (!el) return
-    let wasVisible = false
-    const enterRatio = isMobile ? 0.3 : 0.45
-    const exitRatio = isMobile ? 0.05 : 0.1
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        const ratio = entry.intersectionRatio
-        if (entry.isIntersecting && ratio >= enterRatio && !wasVisible) {
-          wasVisible = true
-          setIsInView(true)
-          } else if (!entry.isIntersecting || ratio < exitRatio) {
-          wasVisible = false
-          setIsInView(false)
-        }
-      },
-      { threshold: [exitRatio, enterRatio] }
-    )
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [isMobile])
+  const isInView = useSectionIntersection(sectionRef, isMobile)
+  const scale = useSectionScale()
 
-  useEffect(() => {
-    const update = () => {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      setScale(w > 1024 ? Math.min(1, (w * 0.6) / 1040, h / 900) * 0.78 : Math.max(0.28, (w - 24) / NATIVE_W))
-    }
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
 
   const card = (
     <div

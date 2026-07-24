@@ -1,33 +1,16 @@
 import { motion } from 'framer-motion'
-import { useState, useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { AnimatedNetworkLines } from './AnimatedNetworkLines'
 import { useIsMobile } from '../hooks/useIsMobile'
 import { BlurFadeWords } from '../BlurFadeWords'
-
-function AnimatedWords({ text, baseDelay = 0, isInView }: {
-  text: string
-  baseDelay?: number
-  isInView: boolean
-}) {
-  const words = text.split(' ')
-  return (
-    <>
-      {words.map((word, i) => (
-        <motion.span
-          key={i}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: isInView ? 1 : 0 }}
-          transition={{ delay: baseDelay + i * 0.1, duration: 0.4, ease: 'easeOut' }}
-          style={{ display: 'inline' }}
-        >
-          {word}{i < words.length - 1 ? ' ' : ''}
-        </motion.span>
-      ))}
-    </>
-  )
-}
-
-const MAGIC_BORDER_GREEN = 'conic-gradient(from 0deg, transparent 0%, transparent 35%, rgba(198,120,69,0.15) 42%, #C67845 50%, rgba(198,120,69,0.15) 58%, transparent 65%, transparent 100%)'
+import {
+  AnimatedWords,
+  useSectionScale,
+  useSectionIntersection,
+  MAGIC_BORDER_GRADIENT as MAGIC_BORDER_GREEN,
+  NATIVE_W,
+  NATIVE_H,
+} from './section-utils'
 
 function MagicBorder({ color, radius = '24px', reverse = false, duration = 4, initialAngle = 0, isInView = true }: { color: string; radius?: string; reverse?: boolean; duration?: number; initialAngle?: number; isInView?: boolean }) {
   const fromAngle = reverse ? -initialAngle : initialAngle
@@ -42,9 +25,6 @@ function MagicBorder({ color, radius = '24px', reverse = false, duration = 4, in
     </div>
   )
 }
-
-const NATIVE_W = 1040
-const NATIVE_H = 684
 
 export interface Section1ProductivityProps {
   sseData?: {
@@ -66,42 +46,10 @@ export interface Section1ProductivityProps {
 
 export function Section1Productivity({ sseData }: Section1ProductivityProps) {
   const sectionRef = useRef<HTMLElement>(null)
-  const [isInView, setIsInView] = useState(false)
   const isMobile = useIsMobile()
-  const [scale, setScale] = useState(1)
-  useEffect(() => {
-    const update = () => {
-      const w = window.innerWidth
-      const h = window.innerHeight
-      setScale(w > 1024 ? Math.min(1, (w * 0.6) / 1040, h / 900) * 0.78 : Math.max(0.28, (w - 24) / NATIVE_W))
-    }
-    update()
-    window.addEventListener('resize', update)
-    return () => window.removeEventListener('resize', update)
-  }, [])
+  const isInView = useSectionIntersection(sectionRef, isMobile)
+  const scale = useSectionScale()
 
-  useEffect(() => {
-    const el = sectionRef.current
-    if (!el) return
-    let wasVisible = false
-    const enterRatio = isMobile ? 0.2 : 0.45
-    const exitRatio = isMobile ? 0.05 : 0.1
-    const obs = new IntersectionObserver(
-      ([entry]) => {
-        const ratio = entry.intersectionRatio
-        if (entry.isIntersecting && ratio >= enterRatio && !wasVisible) {
-          wasVisible = true
-          setIsInView(true)
-          } else if (!entry.isIntersecting || ratio < exitRatio) {
-          wasVisible = false
-          setIsInView(false)
-        }
-      },
-      { threshold: [exitRatio, enterRatio] }
-    )
-    obs.observe(el)
-    return () => obs.disconnect()
-  }, [isMobile])
 
   const agentItems = [
     { label: 'Decomposition Agent', status: sseData?.agentStatuses?.decomposition || 'done' },
