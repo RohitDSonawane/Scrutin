@@ -47,4 +47,15 @@
 - Python 3.11+. Use `from __future__ import annotations` in every module.
 - Use `asyncio.gather()` for independent parallel tool/agent calls. Never `await` them sequentially if they have no data dependency.
 - All async database calls use `aiosqlite`. Do not use synchronous `sqlite3` in async code paths.
-- `aiolimiter` is used for Groq RPM rate limiting. Import and wrap every Groq agent call.
+- `aiolimiter` or native `asyncio` locks/semaphores are used for rate limiting. Import and wrap API calls.
+
+## 8. Ponytail Discipline & Code Minimization
+
+- **The Ponytail Ladder:** Before adding code, verify:
+  1. Does this feature need to exist at all? (YAGNI)
+  2. Is it already in this codebase? Reuse existing helpers.
+  3. Does Python standard library or native platform features cover it? (Prefer stdlib over adding external packages).
+  4. Can it be written in fewer lines without sacrificing readability or safety?
+- **Root-Cause Fixes:** Fix bugs at their single point of origin, never by adding duplicate guards across multiple callers.
+- **No Unneeded Abstractions:** Avoid single-implementation interfaces, single-product factories, or premature config abstractions.
+
