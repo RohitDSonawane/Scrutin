@@ -1,12 +1,12 @@
 from __future__ import annotations
 import os
 from pydantic_ai import Agent
-from app.agents.base import AgentDeps
+from app.agents.base import AgentDeps, get_agent_model
 from app.agents.prompts import get_prompt
 from app.protocols.messages import Finding
 
 forensics_agent = Agent(
-    os.getenv("FORENSICS_MODEL", "google:gemini-2.5-flash"),
+    get_agent_model("FORENSICS_MODEL", "google/gemma-4-26b-a4b-it:free"),
     deps_type=AgentDeps,
     output_type=Finding,
     system_prompt=get_prompt("forensics"),
@@ -19,8 +19,9 @@ async def transcribe_media_tool(ctx, media_url: str) -> dict:
     from pydantic import BaseModel
     class Req(BaseModel):
         media_url_or_path: str
+    import asyncio
     try:
-        resp = registry_call("transcribe_media", Req(media_url_or_path=media_url), ctx.deps.config)
+        resp = await asyncio.to_thread(registry_call, "transcribe_media", Req(media_url_or_path=media_url), ctx.deps.config)
         return resp.model_dump()
     except Exception as e:
         from loguru import logger
@@ -35,8 +36,9 @@ async def analyze_image_tool(ctx, image_path: str) -> dict:
     class Req(BaseModel):
         image_path: str
     from app.tools.registry import call as registry_call
+    import asyncio
     try:
-        resp = registry_call("analyze_image", Req(image_path=image_path))
+        resp = await asyncio.to_thread(registry_call, "analyze_image", Req(image_path=image_path))
         return resp.model_dump()
     except Exception as e:
         from loguru import logger

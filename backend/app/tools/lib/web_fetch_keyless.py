@@ -1,4 +1,5 @@
 import requests
+import asyncio
 from dataclasses import dataclass
 
 @dataclass
@@ -19,3 +20,7 @@ def fetch_markdown(url: str) -> FetchResult:
             return FetchResult(ok=False, reason=f"HTTP {response.status_code}")
     except Exception as e:
         return FetchResult(ok=False, reason=str(e))
+
+async def fetch_markdown_async(url: str) -> FetchResult:
+    """Non-blocking async wrapper for fetch_markdown."""
+    return await asyncio.to_thread(fetch_markdown, url)

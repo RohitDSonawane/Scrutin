@@ -116,3 +116,21 @@ class VerificationReport(BaseModel):
     processing_time_seconds: float
     iterations_used: int
     budget_exhausted: bool
+
+
+# ── 10. LLM-Authoritative Orchestrator Decisions ──────────────────────────────
+class DelegateAction(BaseModel):
+    """Orchestrator wants to run one or more sub-agent tasks next."""
+    tasks: list[Task] = Field(description="Sub-agent tasks to run in this round")
+    reasoning: str = Field(description="One sentence: why these agents were selected")
+
+class FinalizeAction(BaseModel):
+    """Orchestrator decides sufficiency criteria are met and finalizes the run."""
+    report: VerificationReport = Field(description="Complete structured verification report")
+    reasoning: str = Field(description="One sentence: why sufficiency criteria are met")
+
+class OrchestratorDecision(BaseModel):
+    """Tagged union for iteration-by-iteration Orchestrator LLM decision."""
+    action: Literal["delegate", "finalize"] = Field(description="Action type: delegate or finalize")
+    delegate: Optional[DelegateAction] = None
+    finalize: Optional[FinalizeAction] = None

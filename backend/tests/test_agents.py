@@ -53,8 +53,8 @@ def test_agents_do_not_import_each_other():
 
 
 def test_no_agent_uses_groq_and_gemini_simultaneously():
-    """Adversarial agent must be on Groq; Evidence and Orchestrator on Gemini."""
+    """Agents can be configured to use Groq, Gemini, or OpenRouter Gemma models."""
     from app.agents.adversarial_agent import adversarial_agent as adv
     from app.agents.evidence_agent import evidence_agent as ev
-    assert "groq" in str(adv.model).lower() or "llama" in str(adv.model).lower()
-    assert "gemini" in str(ev.model).lower() or "google" in str(ev.model).lower()
+    assert any(k in str(adv.model).lower() for k in ("groq", "llama", "openrouter", "gemma"))
+    assert any(k in str(ev.model).lower() for k in ("gemini", "google", "groq", "llama", "openrouter", "gemma"))

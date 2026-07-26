@@ -26,9 +26,27 @@ def get(capability: str) -> ToolRegistration:
         raise KeyError(f"No tool registered for capability '{capability}'. Available: {list(_REGISTRY.keys())}")
     return _REGISTRY[capability]
 
+import inspect
+
 def call(capability: str, request: Any, config: dict | None = None) -> Any:
     reg = get(capability)
-    return reg.fn(request, config or {}) if reg.requires_config else reg.fn(request)
+    res = reg.fn(request, config or {}) if reg.requires_config else reg.fn(request)
+    if inspect.isawaitable(res):
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                return asyncio.run_coroutine_threadsafe(res, loop).result()
+        except RuntimeError:
+            return asyncio.run(res)
+    return res
+
+async def call_async(capability: str, request: Any, config: dict | None = None) -> Any:
+    reg = get(capability)
+    res = reg.fn(request, config or {}) if reg.requires_config else reg.fn(request)
+    if inspect.isawaitable(res):
+        return await res
+    return res
 
 def list_capabilities() -> list[str]:
     return list(_REGISTRY.keys())

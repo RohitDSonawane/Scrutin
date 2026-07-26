@@ -22,3 +22,21 @@ class AgentDeps:
 def get_agent_logger(agent_name: str):
     """Returns a loguru logger bound to the agent name for colored terminal trace."""
     return logger.bind(agent=agent_name)
+
+
+def get_agent_model(env_var_name: str, default_model: str = "google/gemma-4-26b-a4b-it:free"):
+    """
+    Factory that returns an OpenRouterModel or string model target based on configuration.
+    Defaults to OpenRouter 'google/gemma-4-26b-a4b-it:free'.
+    """
+    import os
+    from pydantic_ai.models.openrouter import OpenRouterModel
+    from pydantic_ai.providers.openrouter import OpenRouterProvider
+
+    raw = os.getenv(env_var_name, default_model)
+    key = os.getenv("OPENROUTER_API_KEY", "")
+
+    if key and (raw.startswith("google/") or raw.startswith("openrouter/") or "gemma" in raw):
+        clean_name = raw.replace("openrouter:", "").replace("openrouter/", "")
+        return OpenRouterModel(clean_name, provider=OpenRouterProvider(api_key=key))
+    return raw

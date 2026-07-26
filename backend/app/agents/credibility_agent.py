@@ -1,12 +1,12 @@
 from __future__ import annotations
 import os
 from pydantic_ai import Agent
-from app.agents.base import AgentDeps
+from app.agents.base import AgentDeps, get_agent_model
 from app.agents.prompts import get_prompt
 from app.protocols.messages import Finding
 
 credibility_agent = Agent(
-    os.getenv("CREDIBILITY_MODEL", "groq:llama-3.3-70b-versatile"),
+    get_agent_model("CREDIBILITY_MODEL", "google/gemma-4-26b-a4b-it:free"),
     deps_type=AgentDeps,
     output_type=Finding,
     system_prompt=get_prompt("credibility"),
@@ -17,9 +17,10 @@ async def whois_lookup_tool(ctx, domain: str) -> dict:
     """Look up WHOIS registration data for a domain to check age and registrar."""
     from app.tools.provenance_tools import DomainVerifyRequest
     from app.tools.registry import call as registry_call
+    import asyncio
     try:
         req = DomainVerifyRequest(domain=domain)
-        resp = registry_call("whois", req)
+        resp = await asyncio.to_thread(registry_call, "whois", req)
         return resp.model_dump()
     except Exception as e:
         from loguru import logger

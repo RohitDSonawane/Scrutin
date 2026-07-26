@@ -1,18 +1,23 @@
 from __future__ import annotations
 import asyncio
+import json
+import sqlite3
 import time
 import uuid
+from typing import Any, Callable, Optional
+
 from loguru import logger
 from app.protocols.blackboard import Blackboard
-from app.protocols.messages import Plan, Finding, VerificationReport
-from app.orchestrator import planner, evaluator
-
-# Import all agents
+from app.protocols.messages import (
+    Plan, Finding, Task, VerificationReport, EvidenceItem, AdversarialCritique
+)
+from app.orchestrator import planner
 from app.agents.decomposition_agent import decomposition_agent
 from app.agents.evidence_agent import evidence_agent
 from app.agents.credibility_agent import credibility_agent
 from app.agents.forensics_agent import forensics_agent
 from app.agents.adversarial_agent import adversarial_agent
+from app.agents.orchestrator_agent import orchestrator_agent
 from app.agents.base import AgentDeps
 
 AGENT_MAP = {
@@ -33,10 +38,9 @@ async def run_orchestrator(
     on_event: Optional[Callable[[str, dict], Any]] = None,
 ) -> VerificationReport:
     """
-    The main orchestration loop. Plain while loop — no graph DSL.
-    Plan → Act → Observe → Reflect → (Replan | Stop)
+    LLM-Authoritative orchestration loop for Scrutin.
+    Orchestrator LLM decides dynamic task delegation and final sufficiency.
     """
-    import sqlite3
     from app.memory.episodic import record_run
 
     config = config or {}
@@ -56,17 +60,199 @@ async def run_orchestrator(
     log.info(f"Run started: {run_id} | input_type={input_type}")
     await emit("start", {"run_id": run_id, "raw_input": raw_input, "input_type": input_type})
 
-    # Initialize Blackboard
     bb = Blackboard(run_id=run_id, raw_input=raw_input, input_type=input_type)
-    bb.plan = planner.initial_plan(bb)
+    bb.plan = planner.bootstrap_plan(bb)
     await emit("plan", {"iteration": 0, "tasks": [t.model_dump() for t in bb.plan.tasks]})
 
     deps = AgentDeps(blackboard=bb, config=config)
     budget_exhausted = False
 
-    # ── Episodic fast-path: check for similar past claims ──────────────────────
+    # ── Fast-path episodic cache lookup ────────────────────────────────────────
+    cached_report = await _check_episodic_cache(raw_input, input_type, run_id, db_path, config, start_time, bb, emit, log)
+    if cached_report:
+        return cached_report
+
+    final_report: Optional[VerificationReport] = None
+
+    try:
+        while bb.budget_remaining():
+            bb.iterations += 1
+
+            # Step A: Run any pending tasks on Blackboard plan
+            pending_tasks = [t for t in bb.plan.tasks if not t.completed]
+            if pending_tasks:
+                next_t = pending_tasks[0]
+                tasks_to_run = (
+                    [t for t in pending_tasks if t.parallel_group == next_t.parallel_group]
+                    if next_t.parallel_group is not None else [next_t]
+                )
+                await asyncio.gather(*(
+                    _execute_single_task(t, bb, deps, emit, log) for t in tasks_to_run
+                ))
+                continue
+
+            # Step B: All tasks complete — query Orchestrator LLM for next decision
+            bb_summary = _summarize_blackboard(bb)
+            prompt = f"Iteration {bb.iterations}/{bb.budget_limit}.\n\n{bb_summary}"
+
+            from app.utils.rate_limiter import groq_acquire
+            await groq_acquire()
+
+            try:
+                res = await orchestrator_agent.run(prompt, deps=deps)
+                decision = res.output
+            except Exception as orch_err:
+                log.error(f"Orchestrator decision query failed: {orch_err}. Forcing fallback.")
+                break
+
+            if decision.action == "finalize" and decision.finalize and decision.finalize.report:
+                # Python Safety Guardrail: Verify Adversarial pass executed
+                has_adv = any(t.agent == "adversarial" and t.completed for t in bb.plan.tasks)
+                if not has_adv:
+                    log.warning("Orchestrator attempted finalize before Adversarial pass — forcing Adversarial task")
+                    bb.plan.tasks.append(Task(
+                        task_id=f"T_adv_{bb.iterations}",
+                        agent="adversarial",
+                        claim_id="C0",
+                        parallel_group=None,
+                    ))
+                    await emit("orchestrator_decision", {
+                        "action": "delegate",
+                        "reasoning": "Python guardrail: Adversarial red-team pass required before finalize."
+                    })
+                    continue
+
+                log.bind(agent="orchestrator").info(f"Finalizing run: {decision.finalize.reasoning}")
+                await emit("orchestrator_decision", {
+                    "action": "finalize",
+                    "reasoning": decision.finalize.reasoning
+                })
+                final_report = decision.finalize.report
+                break
+            elif decision.action == "delegate" and decision.delegate and decision.delegate.tasks:
+                log.bind(agent="orchestrator").info(f"Delegating next tasks: {decision.delegate.reasoning}")
+                for new_task in decision.delegate.tasks:
+                    bb.plan.tasks.append(new_task)
+                await emit("orchestrator_decision", {
+                    "action": "delegate",
+                    "reasoning": decision.delegate.reasoning,
+                    "tasks": [t.model_dump() for t in decision.delegate.tasks]
+                })
+                continue
+            else:
+                log.warning("Orchestrator returned empty decision — stopping loop")
+                break
+        else:
+            budget_exhausted = True
+            log.warning(f"Budget exhausted at {bb.iterations} iterations — forcing stop")
+
+    finally:
+        elapsed = time.time() - start_time
+        is_fallback = False
+
+        if final_report is not None:
+            report = final_report
+        else:
+            log.info("No LLM finalize report produced — building fallback heuristic report")
+            report = _build_final_report(bb, elapsed, budget_exhausted)
+            is_fallback = True
+
+        report.processing_time_seconds = round(elapsed, 2)
+        report.iterations_used = bb.iterations
+        report.budget_exhausted = budget_exhausted
+        report.run_id = bb.run_id
+        report.raw_input = bb.raw_input
+        if not report.evidence_used:
+            report.evidence_used = [EvidenceItem(
+                source_id=k,
+                url=str(v.get("url", "")),
+                snippet=str(v.get("snippet", ""))[:300],
+                source_domain=str(v.get("source_domain", "")),
+                relevance_score=float(v.get("relevance", 0.0)),
+                retrieval_backend=str(v.get("backend_used", "unknown")),
+            ) for k, v in bb.evidence_store.items()]
+
+        bb.final_report = report.model_dump()
+
+        # Commit reputation updates and Pinecone embeddings
+        await _commit_memory_and_reputation(bb, report, is_fallback, config, db_path, log)
+
+        # Flush Blackboard audit trail & record run in SQLite
+        await _flush_run_persistence(bb, report, elapsed, budget_exhausted, is_fallback, db_path, emit, log)
+
+    return report
+
+
+async def _execute_single_task(t: Task, bb: Blackboard, deps: AgentDeps, emit: Callable, log: Any) -> None:
+    """Execute a single sub-agent task with rate-limiting and Blackboard update."""
+    log.info(f"Iteration {bb.iterations}: Running {t.agent} on claim '{t.claim_id}'")
+    await emit("agent_start", {"agent": t.agent, "claim_id": t.claim_id, "task_id": t.task_id, "iteration": bb.iterations})
+    
+    agent = AGENT_MAP.get(t.agent)
+    if not agent:
+        log.error(f"Unknown agent: {t.agent}")
+        bb.plan.mark_done(t.task_id)
+        return
+
+    user_msg = _build_adversarial_prompt(bb) if t.agent == "adversarial" else _build_agent_prompt(t, bb)
+
+    try:
+        if t.agent in ("decomposition", "credibility", "adversarial"):
+            from app.utils.rate_limiter import groq_acquire
+            await groq_acquire()
+        elif t.agent in ("evidence", "forensics"):
+            from app.utils.rate_limiter import gemini_acquire
+            await gemini_acquire()
+
+        result = await agent.run(user_msg, deps=deps)
+        finding = result.output
+
+        if isinstance(finding, Finding):
+            finding.agent = t.agent
+            finding.claim_id = t.claim_id
+            bb.append_finding(finding)
+            log.bind(agent=t.agent).info(f"Finding: stance={finding.stance}, confidence={finding.confidence:.2f}")
+            bb.provisional_verdict = _derive_provisional_verdict(bb)
+            await emit("finding", {
+                "agent": t.agent, "claim_id": t.claim_id, "stance": finding.stance,
+                "confidence": finding.confidence, "rationale": finding.rationale,
+            })
+            await emit("provisional_verdict", {"verdict": bb.provisional_verdict})
+
+        elif isinstance(finding, AdversarialCritique):
+            adv_finding = Finding(
+                agent=t.agent, claim_id=t.claim_id,
+                stance="supports" if finding.verdict_stands else "contradicts",
+                confidence=1.0, rationale=finding.strongest_counter, requests=[],
+            )
+            bb.append_finding(adv_finding)
+            await emit("finding", {
+                "agent": "adversarial", "claim_id": t.claim_id,
+                "stance": adv_finding.stance, "confidence": 1.0, "rationale": finding.strongest_counter,
+            })
+
+        elif hasattr(finding, "claims"):
+            for c in finding.claims:
+                cid = str(c.claim_id if hasattr(c, "claim_id") else c.get("claim_id"))
+                ctext = str(c.claim_text if hasattr(c, "claim_text") else c.get("claim_text"))
+                bb.atomic_claims[cid] = ctext
+            log.bind(agent="decomposition").info(f"Decomposed → {len(finding.claims)} claims")
+            await emit("decomposition", {
+                "claims": [{"claim_id": k, "claim_text": v} for k, v in bb.atomic_claims.items()]
+            })
+    except Exception as e:
+        log.error(f"Agent {t.agent} failed: {e}")
+
+    bb.plan.mark_done(t.task_id)
+
+
+async def _check_episodic_cache(
+    raw_input: str, input_type: str, run_id: str, db_path: str, config: dict,
+    start_time: float, bb: Blackboard, emit: Callable, log: Any
+) -> Optional[VerificationReport]:
+    """Check fast-path cache for exact or high-similarity previously verified claims."""
     from app.memory.semantic import search_similar_claims
-    from app.memory.episodic import find_similar_run
+    from app.memory.episodic import find_similar_run, record_run
 
     similar = await search_similar_claims(raw_input, config)
     if not similar:
@@ -83,348 +269,117 @@ async def run_orchestrator(
 
     if similar:
         top = similar[0]
-        is_exact_match = (top.get("text") or "").lower().strip() == raw_input.lower().strip()
-        
-        if top["score"] >= 0.95 and is_exact_match:
+        if top["score"] >= 0.95 and (top.get("text") or "").lower().strip() == raw_input.lower().strip():
             log.info(f"Episodic fast-path hit: score={top['score']:.3f} → verdict={top['verdict']}")
-            bb.provisional_verdict = top["verdict"]
-            import json
             try:
-                import sqlite3
                 with sqlite3.connect(db_path, timeout=30.0) as conn:
-                    row = conn.execute(
-                        "SELECT data_json FROM episodic_runs WHERE run_id=?",
-                        (top["run_id"],)
-                    ).fetchone()
-
+                    row = conn.execute("SELECT data_json FROM episodic_runs WHERE run_id=?", (top["run_id"],)).fetchone()
                 if row and row[0]:
-                    cached_report_dict = json.loads(row[0]).get("final_report")
-                    if cached_report_dict:
-                        report = VerificationReport.model_validate(cached_report_dict)
+                    cached_dict = json.loads(row[0]).get("final_report")
+                    if cached_dict:
+                        report = VerificationReport.model_validate(cached_dict)
                         report.run_id = run_id
                         report.processing_time_seconds = round(time.time() - start_time, 2)
                         bb.final_report = report.model_dump()
                         
-                        def _sync_write_fast():
-                            with sqlite3.connect(db_path, timeout=30.0) as conn:
-                                bb.flush_to_sqlite(conn)
-
-                        await asyncio.to_thread(_sync_write_fast)
-
-                        try:
-                            await record_run(
-                                run_id=run_id,
-                                raw_input=raw_input,
-                                input_type=input_type,
-                                overall_verdict=report.overall_verdict,
-                                credibility_score=report.credibility_score,
-                                confidence=report.confidence,
-                                data_json=bb.model_dump_json(),
-                                iterations_used=bb.iterations,
-                                budget_exhausted=False,
-                                processing_time_seconds=report.processing_time_seconds,
-                                db_path=db_path,
-                            )
-                        except Exception as rec_err:
-                            log.error(f"Failed to record fast-path run: {rec_err}")
-
+                        await asyncio.to_thread(lambda: sqlite3.connect(db_path, timeout=30.0).execute("PRAGMA journal_mode=WAL"))
+                        await record_run(
+                            run_id=run_id, raw_input=raw_input, input_type=input_type,
+                            overall_verdict=report.overall_verdict, credibility_score=report.credibility_score,
+                            confidence=report.confidence, data_json=bb.model_dump_json(),
+                            iterations_used=bb.iterations, budget_exhausted=False,
+                            processing_time_seconds=report.processing_time_seconds, db_path=db_path,
+                        )
                         return report
             except Exception as e:
-                log.error(f"Failed to load cached run report: {e}. Falling back to standard execution.")
+                log.error(f"Cached run load failed: {e}. Running full pipeline.")
+    return None
 
+
+async def _commit_memory_and_reputation(bb: Blackboard, report: VerificationReport, is_fallback: bool, config: dict, db_path: str, log: Any) -> None:
+    """Commit source reputation updates and Pinecone vector embeddings."""
     try:
-        while bb.budget_remaining():
-            bb.iterations += 1
-            next_t = bb.plan.next_task()
+        from app.memory.longterm import propose_reputation_update
+        for finding in bb.findings:
+            if finding.get("agent") == "credibility":
+                for eid in finding.get("evidence_ids", []):
+                    domain = bb.evidence_store.get(eid, {}).get("source_domain", "")
+                    if domain:
+                        check_failed = (report.overall_verdict in ("false", "misleading"))
+                        res = await propose_reputation_update(domain, check_failed, db_path)
+                        if res["committed"]:
+                            log.bind(agent="orchestrator").info(f"Reputation updated: {domain} → {res['new_score']:.0f}")
+    except Exception as e:
+        log.error(f"Reputation commitment failed: {e}")
 
-            if next_t is None:
-                log.info(f"Iteration {bb.iterations}: No more tasks — running evaluator")
-                # Evaluate stopping criteria
-                bb_summary = _summarize_blackboard(bb)
-                try:
-                    ev, score = await evaluator.evaluate(bb_summary)
-                    log.info(f"Evaluator score: {score:.2f} (threshold: {evaluator.STOPPING_THRESHOLD})")
-
-                    if score >= evaluator.STOPPING_THRESHOLD:
-                        log.info("Stopping criteria met [OK]")
-                        await emit("evaluator", {"score": score, "threshold": evaluator.STOPPING_THRESHOLD, "stopping": True})
-                        break
-
-                    # Not satisfied — reflect and replan
-                    log.info("Stopping criteria NOT met — reflecting and replanning")
-                    reflection = await evaluator.reflect(bb_summary, ev)
-                    log.bind(agent="reflection").info(f"Root cause: {reflection.root_cause}")
-                    
-                    old_task_count = len(bb.plan.tasks)
-                    bb.plan = planner.replan(bb, ev, reflection)
-                    await emit("plan", {"iteration": bb.iterations, "tasks": [t.model_dump() for t in bb.plan.tasks]})
-                    await emit("evaluator", {"score": score, "threshold": evaluator.STOPPING_THRESHOLD, "stopping": False, "root_cause": reflection.root_cause})
-                    if len(bb.plan.tasks) == old_task_count:
-                        log.warning("Replan did not add any new tasks — stopping to prevent infinite loop")
-                        break
-                    continue
-                except Exception as eval_err:
-                    log.error(f"Evaluator/Reflection failed (likely rate limit): {eval_err}. Forcing stop.")
-                    break
-
-            # Gather all pending tasks in the same group (if group exists)
-            if next_t.parallel_group is not None:
-                tasks_to_run = [
-                    t for t in bb.plan.tasks 
-                    if not t.completed and t.parallel_group == next_t.parallel_group
-                ]
-            else:
-                tasks_to_run = [next_t]
-
-            # Define execution wrapper for each task
-            async def run_single_task(t):
-                log.info(f"Iteration {bb.iterations}: Running {t.agent} on claim '{t.claim_id}'")
-                await emit("agent_start", {"agent": t.agent, "claim_id": t.claim_id, "task_id": t.task_id, "iteration": bb.iterations})
-                agent = AGENT_MAP.get(t.agent)
-                if not agent:
-                    log.error(f"Unknown agent: {t.agent}")
-                    bb.plan.mark_done(t.task_id)
-                    return
-
-                if t.agent == "adversarial":
-                    user_msg = _build_adversarial_prompt(bb)
-                else:
-                    user_msg = _build_agent_prompt(t, bb)
-
-                try:
-                    # Enforce rate limit throttling
-                    if t.agent in ("decomposition", "credibility", "adversarial"):
-                        from app.utils.rate_limiter import groq_acquire
-                        await groq_acquire()
-                    elif t.agent in ("evidence", "forensics"):
-                        from app.utils.rate_limiter import gemini_acquire
-                        await gemini_acquire()
-
-                    result = await agent.run(user_msg, deps=deps)
-                    finding = result.output
-
-                    from app.protocols.messages import AdversarialCritique
-
-                    if isinstance(finding, Finding):
-                        finding.agent = t.agent
-                        finding.claim_id = t.claim_id
-                        bb.append_finding(finding)
-                        log.bind(agent=t.agent).info(
-                            f"Finding: stance={finding.stance}, confidence={finding.confidence:.2f}"
-                        )
-                        # Update provisional verdict
-                        bb.provisional_verdict = _derive_provisional_verdict(bb)
-                        await emit("finding", {
-                            "agent": t.agent,
-                            "claim_id": t.claim_id,
-                            "stance": finding.stance,
-                            "confidence": finding.confidence,
-                            "rationale": finding.rationale,
-                        })
-                        await emit("provisional_verdict", {"verdict": bb.provisional_verdict})
-
-                    elif isinstance(finding, AdversarialCritique):
-                        # Convert to Finding so blackboard stores it
-                        adv_finding = Finding(
-                            agent=t.agent,
-                            claim_id=t.claim_id,
-                            stance="supports" if finding.verdict_stands else "contradicts",
-                            confidence=1.0,
-                            rationale=finding.strongest_counter,
-                            requests=[],
-                        )
-                        bb.append_finding(adv_finding)
-                        if finding.verdict_stands:
-                            log.bind(agent="adversarial").info("verdict_stands=True [OK]")
-                        else:
-                            log.bind(agent="adversarial").warning(
-                                f"verdict_stands=False → '{finding.strongest_counter[:80]}...'"
-                            )
-                        await emit("finding", {
-                            "agent": "adversarial",
-                            "claim_id": t.claim_id,
-                            "stance": adv_finding.stance,
-                            "confidence": 1.0,
-                            "rationale": finding.strongest_counter,
-                        })
-
-                    elif hasattr(finding, "claims"):
-                        # DecompositionOutput — populate atomic_claims
-                        for c in finding.claims:
-                            claim_id = str(c.claim_id if hasattr(c, "claim_id") else c.get("claim_id"))
-                            claim_text = str(c.claim_text if hasattr(c, "claim_text") else c.get("claim_text"))
-                            bb.atomic_claims[claim_id] = claim_text
-                        log.bind(agent="decomposition").info(
-                            f"Decomposed → {len(finding.claims)} claims"
-                        )
-                        await emit("decomposition", {
-                            "claims": [{"claim_id": k, "claim_text": v} for k, v in bb.atomic_claims.items()]
-                        })
-                except Exception as e:
-                    log.error(f"Agent {t.agent} failed: {e}")
-
-                bb.plan.mark_done(t.task_id)
-
-            # Gather and execute tasks concurrently
-            await asyncio.gather(*(run_single_task(t) for t in tasks_to_run))
-
-        else:
-            budget_exhausted = True
-            log.warning(f"Budget exhausted at {bb.iterations} iterations — forcing inconclusive")
-
-    finally:
-        # ALWAYS flush to SQLite — even on crash (architecture §5.3)
-        elapsed = time.time() - start_time
-
-        # Wire orchestrator_agent for final synthesis (LLM call, not heuristic)
-        from app.agents.orchestrator_agent import orchestrator_agent
-        is_fallback = False
+    if not is_fallback:
         try:
-            bb_summary = _summarize_blackboard(bb)
-            prompt = (
-                f"Please synthesize the final verification report for the claim: '{bb.raw_input}'\n\n"
-                f"Blackboard state summary:\n{bb_summary}\n\n"
-                f"Provide the complete VerificationReport JSON matching the schema."
+            from app.memory.semantic import upsert_claim
+            for claim_id, claim_text in bb.atomic_claims.items():
+                await upsert_claim(claim_id, claim_text, bb.run_id, report.overall_verdict, config, db_path)
+        except Exception as sem_err:
+            log.error(f"Claim semantic upsert failed: {sem_err}")
+
+
+async def _flush_run_persistence(bb: Blackboard, report: VerificationReport, elapsed: float, budget_exhausted: bool, is_fallback: bool, db_path: str, emit: Callable, log: Any) -> None:
+    """Flush Blackboard state to SQLite audit trail and record episodic run entry."""
+    def _sync_write():
+        with sqlite3.connect(db_path, timeout=30.0, isolation_level=None) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("BEGIN IMMEDIATE")
+            bb.flush_to_sqlite(conn)
+            conn.execute("COMMIT")
+
+    await asyncio.to_thread(_sync_write)
+
+    if not is_fallback:
+        try:
+            from app.memory.episodic import record_run
+            await record_run(
+                run_id=bb.run_id, raw_input=bb.raw_input, input_type=bb.input_type,
+                overall_verdict=report.overall_verdict, credibility_score=report.credibility_score,
+                confidence=report.confidence, data_json=bb.model_dump_json(),
+                iterations_used=bb.iterations, budget_exhausted=budget_exhausted,
+                processing_time_seconds=elapsed, db_path=db_path,
             )
-            from app.utils.rate_limiter import gemini_acquire
-            await gemini_acquire()
-            res = await orchestrator_agent.run(prompt, deps=deps)
-            report = res.output
-            # Ensure Python-controlled metadata fields are set correctly
-            report.processing_time_seconds = round(elapsed, 2)
-            report.iterations_used = bb.iterations
-            report.budget_exhausted = budget_exhausted
-            report.run_id = bb.run_id
-            report.raw_input = bb.raw_input
-            if not report.evidence_used:
-                from app.protocols.messages import EvidenceItem
-                report.evidence_used = [EvidenceItem(
-                    source_id=k,
-                    url=str(v.get("url", "")),
-                    snippet=str(v.get("snippet", ""))[:300],
-                    source_domain=str(v.get("source_domain", "")),
-                    relevance_score=float(v.get("relevance", 0.0)),
-                    retrieval_backend=str(v.get("backend_used", "unknown")),
-                ) for k, v in bb.evidence_store.items()]
-        except Exception as synth_err:
-            log.error(f"Failed orchestrator_agent final synthesis: {synth_err}. Falling back to heuristic.")
-            report = _build_final_report(bb, elapsed, budget_exhausted)
-            is_fallback = True
+        except Exception as db_err:
+            log.error(f"Episodic record failed: {db_err}")
 
-        bb.final_report = report.model_dump()
-
-        # ── Commit reputation updates proposed by credibility agent ────────────────
-        try:
-            from app.memory.longterm import propose_reputation_update
-            for finding in bb.findings:
-                if finding.get("agent") == "credibility":
-                    for eid in finding.get("evidence_ids", []):
-                        ev_data = bb.evidence_store.get(eid, {})
-                        domain = ev_data.get("source_domain", "")
-                        if domain:
-                            check_failed = (report.overall_verdict in ("false", "misleading"))
-                            result = await propose_reputation_update(domain, check_failed, db_path)
-                            if result["committed"]:
-                                log.bind(agent="orchestrator").info(
-                                    f"Reputation updated: {domain} → {result['new_score']:.0f}"
-                                )
-        except Exception as rep_err:
-            log.error(f"Reputation commitment failed: {rep_err}")
-
-        # ── Upsert verified claims into Pinecone ───────────────────────────────────
-        if not is_fallback:
-            try:
-                from app.memory.semantic import upsert_claim
-                for claim_id, claim_text in bb.atomic_claims.items():
-                    await upsert_claim(claim_id, claim_text, bb.run_id, report.overall_verdict, config, db_path)
-            except Exception as sem_err:
-                log.error(f"Claim semantic upsert failed: {sem_err}")
-        else:
-            log.info("Skipping semantic cache upsert because this run was a fallback heuristic.")
-
-        # Write #1: Raw Blackboard audit trail (synchronous connection offloaded to thread to prevent event-loop blocking)
-        def _sync_write_final():
-            conn = sqlite3.connect(db_path, timeout=30.0, isolation_level=None)
-            try:
-                conn.execute("PRAGMA journal_mode=WAL")
-                conn.execute("BEGIN IMMEDIATE")
-                bb.flush_to_sqlite(conn)
-                conn.execute("COMMIT")
-            except Exception as write_err:
-                try:
-                    conn.execute("ROLLBACK")
-                except Exception:
-                    pass
-                raise write_err
-            finally:
-                conn.close()
-
-        await asyncio.to_thread(_sync_write_final)
-
-        # Write #2: Structured fields for analytics (asynchronous connection)
-        if not is_fallback:
-            try:
-                await record_run(
-                    run_id=bb.run_id,
-                    raw_input=bb.raw_input,
-                    input_type=bb.input_type,
-                    overall_verdict=report.overall_verdict,
-                    credibility_score=report.credibility_score,
-                    confidence=report.confidence,
-                    data_json=bb.model_dump_json(),
-                    iterations_used=bb.iterations,
-                    budget_exhausted=budget_exhausted,
-                    processing_time_seconds=elapsed,
-                    db_path=db_path,
-                )
-            except Exception as db_err:
-                log.error(f"Failed to record structured episodic run: {db_err}")
-        else:
-            log.info("Skipping episodic cache write because this run was a fallback heuristic.")
-
-        log.info(f"Run complete: {run_id} | verdict={report.overall_verdict} | time={elapsed:.1f}s")
-        await emit("final_report", {"report": report.model_dump()})
-        await emit("complete", {"run_id": bb.run_id, "processing_time_seconds": round(elapsed, 2)})
-
-    return report
+    log.info(f"Run complete: {bb.run_id} | verdict={report.overall_verdict} | time={elapsed:.1f}s")
+    await emit("final_report", {"report": report.model_dump()})
+    await emit("complete", {"run_id": bb.run_id, "processing_time_seconds": round(elapsed, 2)})
 
 
 def _summarize_blackboard(bb: Blackboard) -> str:
-    """Compact Blackboard summary for evaluator and reflection agents."""
-    lines = [
-        f"Claims: {bb.atomic_claims}",
-        f"Findings ({len(bb.findings)}):",
-    ]
-    for f in bb.findings[-5:]:  # Last 5 findings only — context budget
+    """Compact Blackboard summary for Orchestrator LLM context."""
+    lines = [f"Claims: {bb.atomic_claims}", f"Findings ({len(bb.findings)}):"]
+    for f in bb.findings[-5:]:
         lines.append(f"  [{f['agent']}] {f['claim_id']}: {f['stance']} ({f['confidence']:.2f})")
     lines.append(f"Provisional verdict: {bb.provisional_verdict}")
     lines.append(f"Evidence store keys: {list(bb.evidence_store.keys())}")
     return "\n".join(lines)
 
 
-def _build_agent_prompt(task, bb: Blackboard) -> str:
+def _build_agent_prompt(task: Task, bb: Blackboard) -> str:
     claim_text = bb.atomic_claims.get(task.claim_id, bb.raw_input)
     return f"Claim to verify: {claim_text}\nParams: {task.params}"
 
 
 def _build_adversarial_prompt(bb: Blackboard) -> str:
-    """Adversarial agent gets ONLY raw evidence IDs + snippets + provisional verdict."""
-    evidence_summary = []
-    for eid, data in list(bb.evidence_store.items())[:10]:
-        snippet = str(data.get("snippet", ""))[:200]
-        url = data.get("url", "")
-        evidence_summary.append(f"[{eid}] {url}: {snippet}")
-    return (
-        f"Provisional verdict: {bb.provisional_verdict}\n\n"
-        f"Raw evidence:\n" + "\n".join(evidence_summary)
-    )
+    """Adversarial agent receives ONLY raw evidence IDs/snippets + provisional verdict."""
+    evidence_summary = [
+        f"[{eid}] {data.get('url', '')}: {str(data.get('snippet', ''))[:200]}"
+        for eid, data in list(bb.evidence_store.items())[:10]
+    ]
+    return f"Provisional verdict: {bb.provisional_verdict}\n\nRaw evidence:\n" + "\n".join(evidence_summary)
 
 
 def _derive_provisional_verdict(bb: Blackboard) -> str:
-    """Simple majority-stance heuristic for provisional verdict."""
-    if not bb.findings:
+    """Simple majority-stance heuristic for provisional verdict. Excludes credibility findings."""
+    content_findings = [f for f in bb.findings if f.get("agent") != "credibility"]
+    if not content_findings:
         return "inconclusive"
-    stances = [f["stance"] for f in bb.findings]
+    stances = [f["stance"] for f in content_findings]
     if stances.count("contradicts") > stances.count("supports"):
         return "false"
     elif stances.count("supports") > stances.count("contradicts"):
@@ -435,28 +390,19 @@ def _derive_provisional_verdict(bb: Blackboard) -> str:
 
 
 def _build_final_report(bb: Blackboard, elapsed: float, budget_exhausted: bool) -> VerificationReport:
-    from app.protocols.messages import EvidenceItem
-    adversarial_summary = ""
-    for f in bb.findings:
-        if f["agent"] == "adversarial":
-            adversarial_summary = f.get("rationale", "")
-
-    avg_confidence = (
-        sum(f["confidence"] for f in bb.findings) / len(bb.findings)
-        if bb.findings else 0.0
-    )
-    verdict = bb.provisional_verdict or "inconclusive"
-    score_map = {"true": 85.0, "false": 12.0, "misleading": 40.0,
-                 "unverifiable": 50.0, "inconclusive": 50.0}
+    """Build fallback heuristic VerificationReport if Orchestrator LLM finalize fails."""
+    adv_summary = next((f.get("rationale", "") for f in bb.findings if f.get("agent") == "adversarial"), "")
+    avg_confidence = sum(f["confidence"] for f in bb.findings) / len(bb.findings) if bb.findings else 0.0
+    verdict = "inconclusive"  # Fallback runs MUST default to inconclusive
 
     return VerificationReport(
         run_id=bb.run_id,
         raw_input=bb.raw_input,
         overall_verdict=verdict,
-        credibility_score=score_map.get(verdict, 50.0),
+        credibility_score=50.0,
         confidence=round(avg_confidence, 2),
         claim_findings=bb.findings,
-        adversarial_summary=adversarial_summary or "No adversarial critique produced.",
+        adversarial_summary=adv_summary or "No adversarial critique produced.",
         evidence_used=[EvidenceItem(
             source_id=k,
             url=str(v.get("url", "")),

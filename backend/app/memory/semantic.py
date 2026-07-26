@@ -56,11 +56,13 @@ async def upsert_claim(
         return  # Skip if Pinecone not configured
 
     try:
-        vector = embed_claim(claim_text, config["GOOGLE_API_KEY"])
-        pc = _get_pinecone(config["PINECONE_API_KEY"])
+        import asyncio
+        vector = await asyncio.to_thread(embed_claim, claim_text, config["GOOGLE_API_KEY"])
+        pc = await asyncio.to_thread(_get_pinecone, config["PINECONE_API_KEY"])
         index = pc.Index(PINECONE_INDEX_NAME)
         pinecone_vector_id = f"{run_id}_{claim_id}"
-        index.upsert(
+        await asyncio.to_thread(
+            index.upsert,
             vectors=[{
                 "id": pinecone_vector_id,
                 "values": vector,

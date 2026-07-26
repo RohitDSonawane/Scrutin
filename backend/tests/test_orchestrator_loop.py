@@ -25,8 +25,6 @@ async def test_loop_produces_report(tmp_path):
         credibility_agent.override(model=TestModel()),
         adversarial_agent.override(model=TestModel()),
         orchestrator_agent.override(model=TestModel()),
-        evaluator._evaluator_agent.override(model=TestModel()),
-        evaluator._reflection_agent.override(model=TestModel()),
     ):
         report = await run_orchestrator(
             "The Eiffel Tower was built in 1887",
@@ -50,8 +48,6 @@ async def test_loop_stops_within_budget(tmp_path):
         credibility_agent.override(model=TestModel()),
         adversarial_agent.override(model=TestModel()),
         orchestrator_agent.override(model=TestModel()),
-        evaluator._evaluator_agent.override(model=TestModel()),
-        evaluator._reflection_agent.override(model=TestModel()),
     ):
         report = await run_orchestrator(
             "test claim",
@@ -74,8 +70,6 @@ async def test_sqlite_flushed_on_completion(tmp_path):
         credibility_agent.override(model=TestModel()),
         adversarial_agent.override(model=TestModel()),
         orchestrator_agent.override(model=TestModel()),
-        evaluator._evaluator_agent.override(model=TestModel()),
-        evaluator._reflection_agent.override(model=TestModel()),
     ):
         report = await run_orchestrator("test claim flush", db_path=db_path)
 
@@ -83,3 +77,28 @@ async def test_sqlite_flushed_on_completion(tmp_path):
     row = conn.execute("SELECT run_id FROM episodic_runs WHERE run_id=?", (report.run_id,)).fetchone()
     conn.close()
     assert row is not None, "Run was NOT flushed to SQLite!"
+
+
+def test_provisional_verdict_excludes_credibility_stance():
+    """Credibility agent findings ('mixed') must be excluded from provisional verdict tally."""
+    from app.protocols.blackboard import Blackboard
+    from app.orchestrator.loop import _derive_provisional_verdict
+    from app.protocols.messages import Finding
+
+    bb = Blackboard(run_id="test", raw_input="test claim")
+    # Only credibility finding present (always 'mixed')
+    bb.append_finding(Finding(agent="credibility", claim_id="C0", stance="mixed", confidence=0.8, rationale=""))
+    # Stance tally must ignore credibility 'mixed' and return 'inconclusive' (not 'misleading')
+    assert _derive_provisional_verdict(bb) == "inconclusive"
+
+
+def test_fallback_report_defaults_to_inconclusive():
+    """Fallback report must hardcode overall_verdict='inconclusive' and credibility_score=50.0."""
+    from app.protocols.blackboard import Blackboard
+    from app.orchestrator.loop import _build_final_report
+
+    bb = Blackboard(run_id="test_fb", raw_input="test claim")
+    report = _build_final_report(bb, elapsed=1.5, budget_exhausted=True)
+    assert report.overall_verdict == "inconclusive"
+    assert report.credibility_score == 50.0
+    assert report.budget_exhausted is True

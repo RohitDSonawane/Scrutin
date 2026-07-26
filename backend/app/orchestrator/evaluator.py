@@ -7,9 +7,11 @@ from app.agents.prompts import get_prompt
 STOPPING_THRESHOLD = 0.85   # Minimum score to stop the loop (architecture §6)
 
 
-# Evaluator agent — uses Gemini Flash for deterministic-picker judgment
+from app.agents.base import get_agent_model
+
+# Evaluator agent — uses configured Gemma model
 _evaluator_agent = Agent(
-    os.getenv("ORCHESTRATOR_MODEL", "google:gemini-2.5-flash"),
+    get_agent_model("ORCHESTRATOR_MODEL", "google/gemma-4-26b-a4b-it:free"),
     output_type=EvidenceEvaluation,
     system_prompt="""
 You are the self-critique evaluator for the Scrutin fact-checking orchestrator.
@@ -24,7 +26,7 @@ Also provide a quality_note: ONE specific observation about the weakest remainin
 )
 
 _reflection_agent = Agent(
-    os.getenv("ORCHESTRATOR_MODEL", "google:gemini-2.5-flash"),
+    get_agent_model("ORCHESTRATOR_MODEL", "google/gemma-4-26b-a4b-it:free"),
     output_type=AgentReflection,
     system_prompt="""
 You are the reflection agent. Given why a fact-checking run is insufficient,

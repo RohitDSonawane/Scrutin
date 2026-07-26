@@ -1,12 +1,12 @@
 from __future__ import annotations
 import os
 from pydantic_ai import Agent
-from app.agents.base import AgentDeps
+from app.agents.base import AgentDeps, get_agent_model
 from app.agents.prompts import get_prompt
 from app.protocols.messages import Finding
 
 evidence_agent = Agent(
-    os.getenv("EVIDENCE_MODEL", "google:gemini-2.5-flash"),
+    get_agent_model("EVIDENCE_MODEL", "google/gemma-4-26b-a4b-it:free"),
     deps_type=AgentDeps,
     output_type=Finding,
     system_prompt=get_prompt("evidence"),
@@ -17,19 +17,26 @@ async def web_search_tool(ctx, query: str, date_from: str = "", date_to: str = "
     """Search the web for evidence about the claim using Serper (Google) or DuckDuckGo fallback."""
     from app.tools.search_tools import SearchRequest
     from app.tools.registry import call as registry_call
+    import asyncio
     try:
         req = SearchRequest(query=query, date_from=date_from or None, date_to=date_to or None)
-        resp = registry_call("web_search", req, ctx.deps.config)
-        # Store results on Blackboard and return pointer IDs
-        ids = []
+        resp = await asyncio.to_thread(registry_call, "web_search", req, ctx.deps.config)
+        
+        results_summary = []
         for item in resp.results:
             eid = ctx.deps.blackboard.store_evidence("WB", item.model_dump())
-            ids.append(eid)
-        return {"evidence_ids": ids, "backend": resp.backend_used, "count": len(ids)}
+            results_summary.append({
+                "evidence_id": eid,
+                "title": item.title,
+                "snippet": item.snippet,
+                "url": item.url,
+                "source_domain": item.source_domain,
+            })
+        return {"results": results_summary, "backend": resp.backend_used, "count": len(results_summary)}
     except Exception as e:
         from loguru import logger
         logger.bind(agent="tool_error").error(f"Tool 'web_search_tool' failed: {e}")
-        return {"evidence_ids": [], "backend": "failed", "count": 0, "error": str(e)[:100]}
+        return {"results": [], "backend": "failed", "count": 0, "error": str(e)[:100]}
 
 
 @evidence_agent.tool
@@ -39,7 +46,7 @@ async def factcheck_lookup_tool(ctx, query: str) -> dict:
     from app.tools.registry import call as registry_call
     try:
         req = FactCheckRequest(query=query)
-        resp = registry_call("fact_check", req, ctx.deps.config)
+        resp = await asyncio.to_thread(registry_call, "fact_check", req, ctx.deps.config)
         # Store FC results on Blackboard
         ids = []
         for item in resp.verdicts:
