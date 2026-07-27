@@ -70,16 +70,21 @@ class Finding(BaseModel):
     requests: list[AgentRequest] = Field(default_factory=list)
 
 
-# ── 6. Evaluator deterministic-picker schema ──────────────────────────────────
+# ── 6. Evaluator LLM schema ──────────────────────────────────────────────────
 class EvidenceEvaluation(BaseModel):
     sources_are_independent: bool
     adversarial_critique_addressed: bool
     confidence_matches_evidence: bool
     claim_fully_decomposed: bool
+    readiness_score: float = Field(default=0.0, ge=0.0, le=1.0, description="Evaluator LLM qualitative readiness score")
+    epistemic_reasoning: str = Field(default="", description="Epistemic rationale for readiness score")
     quality_note: str
 
 
 def compute_stopping_score(ev: EvidenceEvaluation) -> float:
+    """Returns LLM qualitative readiness score if set, else calculates weighted score."""
+    if ev.readiness_score > 0.0:
+        return round(ev.readiness_score, 2)
     score = 0.0
     if ev.sources_are_independent:         score += 0.30
     if ev.adversarial_critique_addressed:  score += 0.30
