@@ -4,12 +4,14 @@ from app.protocols.blackboard import Blackboard
 from app.protocols.messages import Plan, Task
 
 
-def bootstrap_plan(blackboard: Blackboard) -> Plan:
+def bootstrap_plan(blackboard: Blackboard, initial_tasks: list[Task] | None = None) -> Plan:
     """
-    Build the initial bootstrap plan.
-    Starts with decomposition task T1. The Orchestrator LLM decides subsequent tasks.
+    Build the initial plan for Blackboard.
+    If initial_tasks is provided, uses them; otherwise starts with decomposition task T1.
     """
-    tasks: list[Task] = [
+    if initial_tasks is not None:
+        return Plan(tasks=initial_tasks)
+    return Plan(tasks=[
         Task(
             task_id="T1",
             agent="decomposition",
@@ -17,8 +19,7 @@ def bootstrap_plan(blackboard: Blackboard) -> Plan:
             params={"raw_input": blackboard.raw_input},
             parallel_group=None,
         )
-    ]
-    return Plan(tasks=tasks)
+    ])
 
 
 # Alias for backward compatibility during migration
