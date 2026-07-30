@@ -9,19 +9,24 @@ STOPPING_THRESHOLD = 0.85   # Minimum score to stop the loop (architecture §6)
 
 from app.agents.base import get_agent_model
 
-# Evaluator agent — uses configured Gemma model
 _evaluator_agent = Agent(
     get_agent_model("ORCHESTRATOR_MODEL", "google/gemma-4-26b-a4b-it:free"),
     output_type=EvidenceEvaluation,
     system_prompt="""
 You are the self-critique evaluator for the Scrutin fact-checking orchestrator.
-Given the current Blackboard state (findings, evidence, provisional verdict), 
-commit to these boolean judgments:
-- sources_are_independent: True iff supporting sources don't all trace to one wire story/press release
-- adversarial_critique_addressed: True iff provisional verdict addresses adversarial's strongest counter
-- confidence_matches_evidence: True iff stated confidence is consistent with source quality and count
-- claim_fully_decomposed: True iff all load-bearing sub-claims have a Finding on the Blackboard
-Also provide a quality_note: ONE specific observation about the weakest remaining gap.
+Given the current Blackboard state (findings, evidence, provisional verdict),
+perform an epistemic evaluation of whether evidence is sufficient to finalize:
+
+1. Assess boolean flags:
+   - sources_are_independent: True iff supporting sources don't all trace to one wire story/press release
+   - adversarial_critique_addressed: True iff provisional verdict addresses adversarial's strongest counter
+   - confidence_matches_evidence: True iff stated confidence is consistent with source quality and count
+   - claim_fully_decomposed: True iff all load-bearing sub-claims have a Finding on the Blackboard
+
+2. Compute readiness_score (float 0.0 to 1.0):
+   Reason epistemically about the overall sufficiency of the evidence. High scores (>=0.85) mean evidence is robust, independent, and withstands red-teaming.
+
+3. Provide epistemic_reasoning (1-2 sentences explaining readiness) and quality_note (ONE observation about the weakest remaining gap).
 """.strip()
 )
 
