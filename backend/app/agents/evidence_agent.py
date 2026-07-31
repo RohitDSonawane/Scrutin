@@ -44,6 +44,7 @@ async def factcheck_lookup_tool(ctx, query: str) -> dict:
     """Check Google Fact Check Tools API for existing verdicts on this claim (fast path)."""
     from app.tools.reference_tools import FactCheckRequest
     from app.tools.registry import call as registry_call
+    import asyncio
     try:
         req = FactCheckRequest(query=query)
         resp = await asyncio.to_thread(registry_call, "fact_check", req, ctx.deps.config)
