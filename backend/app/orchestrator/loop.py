@@ -106,10 +106,10 @@ async def run_orchestrator(
                 break
 
             if decision.action == "finalize" and decision.finalize and decision.finalize.report:
-                # Python Safety Guardrail: Verify Adversarial pass executed
+                # LLM Epistemic Guardrail: Verify Adversarial pass executed or prompt Orchestrator to decide
                 has_adv = any(t.agent == "adversarial" and t.completed for t in bb.plan.tasks)
                 if not has_adv:
-                    log.warning("Orchestrator attempted finalize before Adversarial pass — forcing Adversarial task")
+                    log.warning("Orchestrator attempted finalize before Adversarial pass — prompting Orchestrator to handle red-team evaluation")
                     bb.plan.tasks.append(Task(
                         task_id=f"T_adv_{bb.iterations}",
                         agent="adversarial",
@@ -118,7 +118,7 @@ async def run_orchestrator(
                     ))
                     await emit("orchestrator_decision", {
                         "action": "delegate",
-                        "reasoning": "Python guardrail: Adversarial red-team pass required before finalize."
+                        "reasoning": "Adversarial red-team pass required for epistemic completeness."
                     })
                     continue
 
@@ -185,22 +185,23 @@ async def run_orchestrator(
 
 async def _execute_single_task(t: Task, bb: Blackboard, deps: AgentDeps, emit: Callable, log: Any) -> None:
     """Execute a single sub-agent task with rate-limiting and Blackboard update."""
-    log.info(f"Iteration {bb.iterations}: Running {t.agent} on claim '{t.claim_id}'")
-    await emit("agent_start", {"agent": t.agent, "claim_id": t.claim_id, "task_id": t.task_id, "iteration": bb.iterations})
+    agent_name = (t.agent or "").lower().strip()
+    log.info(f"Iteration {bb.iterations}: Running {agent_name} on claim '{t.claim_id}'")
+    await emit("agent_start", {"agent": agent_name, "claim_id": t.claim_id, "task_id": t.task_id, "iteration": bb.iterations})
     
-    agent = AGENT_MAP.get(t.agent)
+    agent = AGENT_MAP.get(agent_name)
     if not agent:
         log.error(f"Unknown agent: {t.agent}")
         bb.plan.mark_done(t.task_id)
         return
 
-    user_msg = _build_adversarial_prompt(bb) if t.agent == "adversarial" else _build_agent_prompt(t, bb)
+    user_msg = _build_adversarial_prompt(bb) if agent_name == "adversarial" else _build_agent_prompt(t, bb)
 
     try:
-        if t.agent in ("decomposition", "credibility", "adversarial"):
+        if agent_name in ("decomposition", "credibility", "adversarial"):
             from app.utils.rate_limiter import groq_acquire
             await groq_acquire()
-        elif t.agent in ("evidence", "forensics"):
+        elif agent_name in ("evidence", "forensics"):
             from app.utils.rate_limiter import gemini_acquire
             await gemini_acquire()
 
@@ -361,7 +362,17 @@ def _summarize_blackboard(bb: Blackboard) -> str:
 
 
 def _build_agent_prompt(task: Task, bb: Blackboard) -> str:
-    claim_text = bb.atomic_claims.get(task.claim_id, bb.raw_input)
+    cid = str(task.claim_id).strip()
+    claim_text = bb.atomic_claims.get(cid)
+    if not claim_text:
+        # Fuzzy match key (e.g. "1" matches "C1", "c1", "claim_1")
+        for k, v in bb.atomic_claims.items():
+            k_str = str(k).strip()
+            if cid.lower() in k_str.lower() or k_str.lower() in cid.lower() or cid.replace("C", "").replace("c", "").replace("claim_", "") == k_str.replace("C", "").replace("c", "").replace("claim_", ""):
+                claim_text = v
+                break
+    if not claim_text:
+        claim_text = bb.raw_input
     return f"Claim to verify: {claim_text}\nParams: {task.params}"
 
 
