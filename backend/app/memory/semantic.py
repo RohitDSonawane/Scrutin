@@ -32,7 +32,8 @@ def embed_claim(text: str, api_key: str) -> list[float]:
         content=text,
         task_type="retrieval_query",
     )
-    return result["embedding"]
+    emb = result["embedding"]
+    return emb[:EMBEDDING_DIM]
 
 
 async def upsert_claim(
