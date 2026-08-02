@@ -22,13 +22,19 @@ def _get_pinecone(api_key: str):
 
 def embed_claim(text: str, api_key: str) -> list[float]:
     """
-    Generate a 768-dim embedding for a claim text using gemini-embedding-001.
+    Generate a 768-dim embedding for a claim text.
+    Embedding model resolved from EMBEDDING_MODEL env var.
     IMPORTANT: Do NOT use 'text-embedding-3-small' — that is an OpenAI model name.
     """
+    import os
     import google.generativeai as genai
     genai.configure(api_key=api_key)
+    embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+    # google.generativeai SDK requires "models/" prefix
+    if not embedding_model.startswith("models/"):
+        embedding_model = f"models/{embedding_model}"
     result = genai.embed_content(
-        model="models/gemini-embedding-001",
+        model=embedding_model,
         content=text,
         task_type="retrieval_query",
     )

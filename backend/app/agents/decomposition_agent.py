@@ -24,7 +24,7 @@ class DecompositionOutput(BaseModel):
 from app.agents.base import AgentDeps, get_agent_model
 
 decomposition_agent = Agent(
-    get_agent_model("DECOMPOSITION_MODEL", "google/gemma-4-26b-a4b-it:free"),
+    get_agent_model("DECOMPOSITION_MODEL"),
     deps_type=AgentDeps,
     output_type=DecompositionOutput,
     system_prompt=get_prompt("decomposition"),

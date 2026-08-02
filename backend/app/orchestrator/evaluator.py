@@ -10,7 +10,7 @@ STOPPING_THRESHOLD = 0.85   # Minimum score to stop the loop (architecture §6)
 from app.agents.base import get_agent_model
 
 _evaluator_agent = Agent(
-    get_agent_model("ORCHESTRATOR_MODEL", "google/gemma-4-26b-a4b-it:free"),
+    get_agent_model("EVALUATOR_MODEL"),
     output_type=EvidenceEvaluation,
     system_prompt="""
 You are the self-critique evaluator for the Scrutin fact-checking orchestrator.
@@ -31,7 +31,7 @@ perform an epistemic evaluation of whether evidence is sufficient to finalize:
 )
 
 _reflection_agent = Agent(
-    get_agent_model("ORCHESTRATOR_MODEL", "google/gemma-4-26b-a4b-it:free"),
+    get_agent_model("EVALUATOR_MODEL"),
     output_type=AgentReflection,
     system_prompt="""
 You are the reflection agent. Given why a fact-checking run is insufficient,

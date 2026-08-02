@@ -6,7 +6,7 @@ from app.agents.prompts import get_prompt
 from app.protocols.messages import Finding
 
 credibility_agent = Agent(
-    get_agent_model("CREDIBILITY_MODEL", "google/gemma-4-26b-a4b-it:free"),
+    get_agent_model("CREDIBILITY_MODEL"),
     deps_type=AgentDeps,
     output_type=Finding,
     system_prompt=get_prompt("credibility"),

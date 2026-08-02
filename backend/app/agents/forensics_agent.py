@@ -6,7 +6,7 @@ from app.agents.prompts import get_prompt
 from app.protocols.messages import Finding
 
 forensics_agent = Agent(
-    get_agent_model("FORENSICS_MODEL", "google/gemma-4-26b-a4b-it:free"),
+    get_agent_model("FORENSICS_MODEL"),
     deps_type=AgentDeps,
     output_type=Finding,
     system_prompt=get_prompt("forensics"),

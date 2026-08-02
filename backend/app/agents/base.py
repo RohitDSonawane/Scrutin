@@ -24,16 +24,25 @@ def get_agent_logger(agent_name: str):
     return logger.bind(agent=agent_name)
 
 
-def get_agent_model(env_var_name: str, default_model: str = "google/gemma-4-26b-a4b-it:free"):
+def get_agent_model(env_var_name: str):
     """
     Factory that returns an OpenRouterModel or string model target based on configuration.
-    Defaults to OpenRouter 'google/gemma-4-26b-a4b-it:free'.
+    All model names are resolved exclusively from environment variables.
+    Cascade: env_var_name -> DEFAULT_MODEL -> ORCHESTRATOR_MODEL.
     """
     import os
     from pydantic_ai.models.openrouter import OpenRouterModel
     from pydantic_ai.providers.openrouter import OpenRouterProvider
 
-    raw = os.getenv(env_var_name, default_model)
+    raw = (
+        os.getenv(env_var_name)
+        or os.getenv("DEFAULT_MODEL")
+        or os.getenv("ORCHESTRATOR_MODEL")
+    )
+    if not raw:
+        raise RuntimeError(
+            f"No model configured: set {env_var_name}, DEFAULT_MODEL, or ORCHESTRATOR_MODEL in .env"
+        )
     key = os.getenv("OPENROUTER_API_KEY", "")
 
     if key and (raw.startswith("google/") or raw.startswith("openrouter/") or "gemma" in raw):
