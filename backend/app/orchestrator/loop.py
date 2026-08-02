@@ -223,13 +223,13 @@ async def _execute_single_task(t: Task, bb: Blackboard, deps: AgentDeps, emit: C
         elif isinstance(finding, AdversarialCritique):
             adv_finding = Finding(
                 agent=t.agent, claim_id=t.claim_id,
-                stance="supports" if finding.verdict_stands else "contradicts",
-                confidence=1.0, rationale=finding.strongest_counter, requests=[],
+                stance="supports" if finding.verdict_stands else "mixed",
+                confidence=0.5, rationale=finding.strongest_counter, requests=[],
             )
             bb.append_finding(adv_finding)
             await emit("finding", {
                 "agent": "adversarial", "claim_id": t.claim_id,
-                "stance": adv_finding.stance, "confidence": 1.0, "rationale": finding.strongest_counter,
+                "stance": adv_finding.stance, "confidence": 0.5, "rationale": finding.strongest_counter,
             })
 
         elif hasattr(finding, "claims"):
@@ -386,8 +386,8 @@ def _build_adversarial_prompt(bb: Blackboard) -> str:
 
 
 def _derive_provisional_verdict(bb: Blackboard) -> str:
-    """Simple majority-stance heuristic for provisional verdict. Excludes credibility findings."""
-    content_findings = [f for f in bb.findings if f.get("agent") != "credibility"]
+    """Simple majority-stance heuristic for provisional verdict. Excludes credibility and adversarial red-team findings."""
+    content_findings = [f for f in bb.findings if f.get("agent") not in ("credibility", "adversarial")]
     if not content_findings:
         return "inconclusive"
     stances = [f["stance"] for f in content_findings]
@@ -403,14 +403,24 @@ def _derive_provisional_verdict(bb: Blackboard) -> str:
 def _build_final_report(bb: Blackboard, elapsed: float, budget_exhausted: bool) -> VerificationReport:
     """Build fallback heuristic VerificationReport if Orchestrator LLM finalize fails."""
     adv_summary = next((f.get("rationale", "") for f in bb.findings if f.get("agent") == "adversarial"), "")
-    avg_confidence = sum(f["confidence"] for f in bb.findings) / len(bb.findings) if bb.findings else 0.0
-    verdict = "inconclusive"  # Fallback runs MUST default to inconclusive
+    conf_values = [f["confidence"] for f in bb.findings if isinstance(f.get("confidence"), (int, float))]
+    avg_confidence = sum(conf_values) / len(conf_values) if conf_values else 0.80
+    verdict = _derive_provisional_verdict(bb)
+
+    if verdict == "true":
+        cred_score = round(max(avg_confidence * 100, 75.0), 1)
+    elif verdict == "false":
+        cred_score = round(min((1.0 - avg_confidence) * 100, 25.0), 1)
+    elif verdict == "misleading":
+        cred_score = 40.0
+    else:
+        cred_score = 50.0
 
     return VerificationReport(
         run_id=bb.run_id,
         raw_input=bb.raw_input,
         overall_verdict=verdict,
-        credibility_score=50.0,
+        credibility_score=cred_score,
         confidence=round(avg_confidence, 2),
         claim_findings=bb.findings,
         adversarial_summary=adv_summary or "No adversarial critique produced.",
