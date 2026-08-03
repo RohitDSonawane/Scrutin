@@ -51,13 +51,22 @@ def verify_cmd(
 
     console.print(f"\n[bold cyan]Scrutin[/] — Verifying: [italic]{raw_input[:80]}...[/]\n")
 
-    from app.orchestrator.loop import run_orchestrator
-    report = asyncio.run(run_orchestrator(
-        raw_input=raw_input,
-        input_type=input_type,
-        config=config,
-        db_path=db_path,
-    ))
+    import uuid
+    from app.protocols.blackboard import Blackboard
+    from app.agents.base import AgentDeps
+    from app.graph.state import ScrutinGraphState
+    from app.graph.engine import run_graph_engine
+
+    run_id = str(uuid.uuid4())[:8]
+    bb = Blackboard(run_id=run_id, raw_input=raw_input)
+    deps = AgentDeps(blackboard=bb, config=config)
+    state = ScrutinGraphState(run_id=run_id, raw_input=raw_input, input_type=input_type)
+
+    async def cli_emit(event_type: str, data: dict):
+        if trace:
+            console.print(f"[dim]{event_type}: {data.get('message', '')}[/dim]")
+
+    report = asyncio.run(run_graph_engine(state, deps, cli_emit))
 
     _print_verdict_banner(report)
 
@@ -92,6 +101,11 @@ def _print_verdict_banner(report) -> None:
     if report.adversarial_summary:
         adv_short = report.adversarial_summary[:120] + "..." if len(report.adversarial_summary) > 120 else report.adversarial_summary
         table.add_row("Adversarial", adv_short)
+
+    # AI Opinion synthesis
+    if getattr(report, "ai_opinion", None):
+        opinion_text = report.ai_opinion[:240] + "..." if len(report.ai_opinion) > 240 else report.ai_opinion
+        table.add_row("AI Opinion", f"[italic cyan]{opinion_text}[/italic cyan]")
 
     panel = Panel(table, title="[bold]Scrutin Verification Report[/]", border_style=color)
     console.print(panel)

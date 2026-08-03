@@ -121,6 +121,7 @@ class VerificationReport(BaseModel):
     processing_time_seconds: float
     iterations_used: int
     budget_exhausted: bool
+    ai_opinion: Optional[str] = Field(default=None, description="AI narrative opinion explaining the final verdict rationale, key evidence highlights, and credibility analysis.")
 
 
 # ── 10. LLM-Authoritative Orchestrator Decisions ──────────────────────────────
