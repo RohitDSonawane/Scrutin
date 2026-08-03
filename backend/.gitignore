@@ -4,6 +4,7 @@
 Docs/
 Implementation/
 Refrences/
+docs/implementation_plan/
 
 # Local SQLite databases and WAL files
 *.db
