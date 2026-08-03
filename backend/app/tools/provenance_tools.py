@@ -1,6 +1,5 @@
 from __future__ import annotations
 from datetime import datetime, timezone
-from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -12,10 +11,10 @@ class DomainVerifyRequest(BaseModel):
 
 class DomainVerifyResponse(BaseModel):
     domain: str
-    registered_at: Optional[str] = None    # YYYY-MM-DD
-    registrar: Optional[str] = None
+    registered_at: str | None = None    # YYYY-MM-DD
+    registrar: str | None = None
     is_recent: bool = False               # True if registered < 180 days ago
-    domain_age_days: Optional[int] = None
+    domain_age_days: int | None = None
     lookup_failed: bool = False
     failure_reason: str = ""
 

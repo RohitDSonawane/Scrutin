@@ -25,7 +25,7 @@ from app.protocols.messages import VerificationReport
 async def run_graph_engine(
     state: ScrutinGraphState,
     deps: AgentDeps,
-    emit: Callable[[str, dict], Any],
+    emit: Callable[[str, dict[str, Any]], Any],
 ) -> VerificationReport:
     """
     Stateful execution graph engine for Scrutin multi-agent verification.

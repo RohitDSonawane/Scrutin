@@ -2,7 +2,7 @@ from __future__ import annotations
 import os
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
-from app.agents.base import AgentDeps
+from app.agents.base import AgentDeps, get_agent_model
 from app.agents.prompts import get_prompt
 
 
@@ -19,9 +19,6 @@ class DecompositionOutput(BaseModel):
     )
     opinion_flags: list[str] = Field(default_factory=list)
     decomposition_note: str = ""
-
-
-from app.agents.base import AgentDeps, get_agent_model
 
 decomposition_agent = Agent(
     get_agent_model("DECOMPOSITION_MODEL"),

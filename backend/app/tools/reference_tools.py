@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Optional
+from typing import Any
 from pydantic import BaseModel, Field
 from app.tools.lib import http
 
@@ -14,11 +14,11 @@ class FactCheckRequest(BaseModel):
 
 class FactCheckItem(BaseModel):
     claim_text: str
-    claimant: Optional[str] = None
+    claimant: str | None = None
     verdict: str                    # "True" | "False" | "Misleading" | etc.
     review_publisher: str           # e.g. "Snopes", "PolitiFact"
     review_url: str
-    review_date: Optional[str] = None
+    review_date: str | None = None
 
 
 class FactCheckResponse(BaseModel):
@@ -31,7 +31,7 @@ class FactCheckResponse(BaseModel):
 
 FACT_CHECK_API_URL = "https://factchecktools.googleapis.com/v1alpha1/claims:search"
 
-def query_factcheck_db(request: FactCheckRequest, config: dict) -> FactCheckResponse:
+def query_factcheck_db(request: FactCheckRequest, config: dict[str, Any]) -> FactCheckResponse:
     """
     Query the Google Fact Check Tools API for existing ClaimReview verdicts.
     This is the Evidence agent's fast-path: if a matching verdict already exists,
@@ -84,7 +84,7 @@ class AcademicPaperItem(BaseModel):
     title: str
     authors: list[str] = Field(default_factory=list)
     journal_or_publisher: str = ""
-    published_year: Optional[int] = None
+    published_year: int | None = None
     abstract_snippet: str = ""
     doi_or_url: str = ""
     is_retracted: bool = False

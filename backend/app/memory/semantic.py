@@ -1,6 +1,7 @@
 from __future__ import annotations
+import math
 import os
-from typing import Optional
+from typing import Any
 
 PINECONE_INDEX_NAME = "scrutin-claims"
 EMBEDDING_DIM = 768
@@ -26,11 +27,12 @@ def embed_claim(text: str, api_key: str) -> list[float]:
     Embedding model resolved from EMBEDDING_MODEL env var.
     IMPORTANT: Do NOT use 'text-embedding-3-small' — that is an OpenAI model name.
     """
-    import os
     from google import genai
 
     client = genai.Client(api_key=api_key)
-    embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+    embedding_model = os.getenv("EMBEDDING_MODEL")
+    if not embedding_model:
+        raise RuntimeError("No embedding model configured: set EMBEDDING_MODEL in .env")
     if embedding_model.startswith("models/"):
         embedding_model = embedding_model.replace("models/", "")
 
@@ -43,7 +45,6 @@ def embed_claim(text: str, api_key: str) -> list[float]:
 
 
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:
-    import math
     dot_product = sum(a * b for a, b in zip(v1, v2))
     mag1 = math.sqrt(sum(a * a for a in v1))
     mag2 = math.sqrt(sum(b * b for b in v2))

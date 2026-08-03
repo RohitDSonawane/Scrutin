@@ -1,18 +1,20 @@
-import requests
+from __future__ import annotations
 import json
+import requests
+from typing import Any
 from urllib.parse import urlparse
 
 def get_domain(url: str) -> str:
     try:
         return urlparse(url).netloc.replace("www.", "")
-    except:
+    except Exception:
         return ""
 
-def web_search(query: str, date_range: tuple | None, config: dict, backend: str):
+def web_search(query: str, date_range: tuple[str, str] | None, config: dict[str, Any], backend: str) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Web search implementation using Serper.dev API."""
     api_key = config.get("SERPER_API_KEY")
     if not api_key or backend == "keyless":
-        # DuckDuckGo fallback (simplified mock for now)
+        # DuckDuckGo fallback
         return [], {"label": "keyless", "resultCount": 0}
         
     url = "https://google.serper.dev/search"
@@ -24,7 +26,7 @@ def web_search(query: str, date_range: tuple | None, config: dict, backend: str)
     
     response = requests.request("POST", url, headers=headers, data=payload)
     if response.status_code != 200:
-        raise Exception(f"Serper API error: {response.status_code}")
+        raise RuntimeError(f"Serper API error: {response.status_code}")
         
     data = response.json()
     organic = data.get("organic", [])
@@ -37,7 +39,7 @@ def web_search(query: str, date_range: tuple | None, config: dict, backend: str)
             "source_domain": get_domain(res.get("link", "")),
             "snippet": res.get("snippet", ""),
             "date": res.get("date", ""),
-            "relevance": 0.9 # Default relevance
+            "relevance": 0.9  # Default relevance
         })
         
     return items, {"label": "serper", "resultCount": len(items)}

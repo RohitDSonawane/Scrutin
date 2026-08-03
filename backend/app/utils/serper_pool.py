@@ -1,7 +1,8 @@
 from __future__ import annotations
 import itertools
 import os
-from typing import Iterator
+from collections.abc import Iterator
+from loguru import logger
 
 
 def _load_serper_keys() -> list[str]:
@@ -37,7 +38,6 @@ class SerperKeyPool:
     def mark_exhausted(self, key: str) -> None:
         """Mark a key as quota-exhausted for this session."""
         self._exhausted_keys.add(key)
-        from loguru import logger
         logger.warning(f"Serper key ...{key[-6:] if len(key) >= 6 else key} marked exhausted. "
                        f"Remaining: {len(self._keys) - len(self._exhausted_keys)}")
 

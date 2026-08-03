@@ -160,8 +160,11 @@ def rerank_snippets(query: str, snippets: list[str], api_key: str, top_k: int = 
         client = genai.Client(api_key=api_key)
         # Batch embed the query + all snippets to minimize API roundtrips
         contents = [query] + snippets
+        model_name = os.getenv("EMBEDDING_MODEL")
+        if not model_name:
+            return [(i, 0.5) for i in range(len(snippets))][:top_k]
         response = client.models.embed_content(
-            model=os.getenv("EMBEDDING_MODEL", "gemini-embedding-001"),
+            model=model_name,
             contents=contents,
         )
         embeddings = [e.values for e in response.embeddings]

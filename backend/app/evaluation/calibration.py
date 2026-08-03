@@ -44,19 +44,16 @@ def compute_ece(db_path: str = "scrutin.db") -> float:
     A well-calibrated system: ECE < 0.05 (right ~80% of time when it says 80%).
     Returns 0.0 if no calibration data exists yet.
     """
-    conn = sqlite3.connect(db_path, timeout=30.0)
-    # Check if table exists first before querying to avoid operational errors
-    table_exists = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_log'"
-    ).fetchone()
-    if not table_exists:
-        conn.close()
-        return 0.0
+    with sqlite3.connect(db_path, timeout=30.0) as conn:
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_log'"
+        ).fetchone()
+        if not table_exists:
+            return 0.0
 
-    rows = conn.execute(
-        "SELECT stated_confidence, actual_outcome FROM calibration_log WHERE actual_outcome IS NOT NULL"
-    ).fetchall()
-    conn.close()
+        rows = conn.execute(
+            "SELECT stated_confidence, actual_outcome FROM calibration_log WHERE actual_outcome IS NOT NULL"
+        ).fetchall()
 
     if not rows:
         return 0.0
@@ -81,21 +78,18 @@ def compute_ece(db_path: str = "scrutin.db") -> float:
 def print_calibration_report(db_path: str = "scrutin.db") -> None:
     ece = compute_ece(db_path)
 
-    conn = sqlite3.connect(db_path, timeout=30.0)
-    # Check if table exists first
-    table_exists = conn.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_log'"
-    ).fetchone()
-    if not table_exists:
-        conn.close()
-        total = 0
-        correct = 0
-    else:
-        total = conn.execute("SELECT COUNT(*) FROM calibration_log").fetchone()[0]
-        correct = conn.execute(
-            "SELECT COUNT(*) FROM calibration_log WHERE actual_outcome='correct'"
-        ).fetchone()[0]
-        conn.close()
+    with sqlite3.connect(db_path, timeout=30.0) as conn:
+        table_exists = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='calibration_log'"
+        ).fetchone()
+        if not table_exists:
+            total = 0
+            correct = 0
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM calibration_log").fetchone()[0]
+            correct = conn.execute(
+                "SELECT COUNT(*) FROM calibration_log WHERE actual_outcome='correct'"
+            ).fetchone()[0]
 
     table = Table(title="Calibration Report", box=box.ROUNDED)
     table.add_column("Metric", style="cyan")

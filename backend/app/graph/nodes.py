@@ -21,7 +21,51 @@ from app.agents.forensics_agent import forensics_agent
 from app.agents.adversarial_agent import adversarial_agent
 
 
-async def decomposition_node(state: ScrutinGraphState, deps: AgentDeps, emit: Callable) -> ScrutinGraphState:
+# ── Pure Helper Functions ──────────────────────────────────────────────────────
+
+def _has_refutation_keywords(text: str) -> bool:
+    """Check if snippet text contains refutation or debunking keywords."""
+    refutation_words = (
+        "is a myth", "is false", "is fake", "is untrue",
+        "debunked", "hoax claim", "false claim", "no evidence that"
+    )
+    return any(w in text.lower() for w in refutation_words)
+
+
+def _is_urban_legend_claim(claim_text: str) -> bool:
+    """Check if claim matches known viral urban legend or hoax patterns."""
+    c_lower = claim_text.lower()
+    legend_keywords = ("unesco", "nano", "chip", "5g", "child lifter", "kidnap", "guava", "alkaline", "2000")
+    return any(w in c_lower for w in legend_keywords) or ("cure" in c_lower and "dengue" in c_lower)
+
+
+def _tally_stances(findings: list[dict[str, Any]]) -> tuple[str, dict[str, int], int]:
+    """Calculate majority stance across non-adversarial factual findings."""
+    stance_counts = {"supports": 0, "contradicts": 0, "mixed": 0, "insufficient_evidence": 0}
+    factual_findings = [f for f in findings if (f.get("agent") or "").lower() != "adversarial"]
+
+    for f in factual_findings:
+        s = f.get("stance", "insufficient_evidence")
+        if s in stance_counts:
+            stance_counts[s] += 1
+
+    total_factual = sum(stance_counts.values())
+    top_stance = "insufficient_evidence" if total_factual == 0 else max(stance_counts.items(), key=lambda x: x[1])[0]
+    return top_stance, stance_counts, total_factual
+
+
+def _synthesize_ai_opinion(verdict: str, summary_text: str) -> str:
+    """Synthesize a 2-3 sentence AI verdict narrative opinion."""
+    if verdict == "true":
+        return f"Based on cross-source corroboration, this claim appears to be factual and supported by primary evidence. {summary_text}"
+    if verdict == "false":
+        return f"Based on empirical verification and primary records, this claim is unverified or debunked as misinformation. {summary_text}"
+    if verdict == "misleading":
+        return f"This claim contains partial, contextually ambiguous, or exaggerated assertions. {summary_text}"
+    return f"Primary source evidence is currently insufficient to definitively confirm or refute this assertion. {summary_text}"
+
+
+async def decomposition_node(state: ScrutinGraphState, deps: AgentDeps, emit: Callable[[str, dict[str, Any]], Any]) -> ScrutinGraphState:
     """Executes initial claim decomposition with API fallback handler."""
     logger.info(f"Run {state.run_id}: Executing Decomposition Node")
     await emit("agent_start", {"agent": "decomposition", "claim_id": "C0", "iteration": state.iterations})
@@ -34,7 +78,6 @@ async def decomposition_node(state: ScrutinGraphState, deps: AgentDeps, emit: Ca
         claims_list = out.claims
     except Exception as e:
         logger.error(f"Decomposition agent LLM failed: {e}. Executing heuristic decomposition fallback.")
-        # Rule-based heuristic decomposition fallback
         from app.agents.decomposition_agent import AtomicClaim
         state.atomic_claims = {"C1": state.raw_input[:200]}
         claim_type = "scientific_medical" if any(w in state.raw_input.lower() for w in ["dengue", "cure", "health", "doctor", "who", "virus", "medicine"]) else "political_news"
@@ -53,7 +96,7 @@ async def decomposition_node(state: ScrutinGraphState, deps: AgentDeps, emit: Ca
     return state
 
 
-async def evidence_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, emit: Callable) -> ScrutinGraphState:
+async def evidence_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, emit: Callable[[str, dict[str, Any]], Any]) -> ScrutinGraphState:
     """Executes iterative search and corroboration for a claim."""
     logger.info(f"Run {state.run_id}: Executing Evidence Node for claim {task.claim_id}")
     await emit("agent_start", {"agent": "evidence", "claim_id": task.claim_id, "task_id": task.task_id, "iteration": state.iterations})
@@ -68,7 +111,6 @@ async def evidence_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, e
         state.findings.append(finding.model_dump())
     except Exception as e:
         logger.error(f"Evidence node LLM failed for task {task.task_id}: {e}")
-        # Heuristic MCP fallback on LLM failure
         try:
             from app.tools.reference_tools import query_factcheck_db, FactCheckRequest
             fc_res = query_factcheck_db(FactCheckRequest(query=claim_text[:100]), deps.config or {})
@@ -84,12 +126,10 @@ async def evidence_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, e
                 deps.blackboard.append_finding(h_finding)
                 state.findings.append(h_finding.model_dump())
             else:
-                # Run web search heuristic for positive evidence with strict keyword precision
                 from app.tools.search_tools import web_search, SearchRequest
                 s_res = web_search(SearchRequest(query=claim_text[:100], count=5), deps.config or {})
                 if s_res.results and len(s_res.results) > 0:
                     from app.protocols.messages import Finding
-                    # Stopwords to ignore in keyword overlap match
                     stopwords = {"government", "india", "central", "launch", "launched", "free", "claim", "month", "monthly", "today", "every", "verify", "link", "register", "channel", "allowance"}
                     claim_words = [w.lower() for w in claim_text.split() if len(w) > 4 and w.lower() not in stopwords]
                     kw_matches = 0
@@ -101,11 +141,8 @@ async def evidence_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, e
 
                     is_phishing_text = any(w in claim_text.lower() for w in ["http:", ".site", ".online", "telegram", "cash allowance", "free recharge", "otp", "yojana"])
                     snippet_text = " ".join([r.snippet.lower() for r in s_res.results]) + " " + " ".join([r.title.lower() for r in s_res.results])
-                    refutation_words = ["is a myth", "is false", "is fake", "is untrue", "debunked", "hoax claim", "false claim", "no evidence that"]
-                    is_refutation = any(w in snippet_text for w in refutation_words)
-                    is_urban_legend = any(
-                        (w in claim_text.lower()) for w in ["unesco", "nano", "chip", "5g", "child lifter", "kidnap", "guava", "alkaline", "2000"]
-                    ) or ("cure" in claim_text.lower() and "dengue" in claim_text.lower())
+                    is_refutation = _has_refutation_keywords(snippet_text)
+                    is_urban_legend = _is_urban_legend_claim(claim_text)
 
                     if is_phishing_text or is_urban_legend or (is_refutation and kw_matches < 5):
                         stance = "contradicts"
@@ -130,7 +167,7 @@ async def evidence_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, e
     return state
 
 
-async def credibility_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, emit: Callable) -> ScrutinGraphState:
+async def credibility_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, emit: Callable[[str, dict[str, Any]], Any]) -> ScrutinGraphState:
     """Executes WHOIS and domain reputation evaluation."""
     logger.info(f"Run {state.run_id}: Executing Credibility Node for claim {task.claim_id}")
     await emit("agent_start", {"agent": "credibility", "claim_id": task.claim_id, "task_id": task.task_id, "iteration": state.iterations})
@@ -145,7 +182,6 @@ async def credibility_node(state: ScrutinGraphState, task: Task, deps: AgentDeps
         state.findings.append(finding.model_dump())
     except Exception as e:
         logger.error(f"Credibility node LLM failed for task {task.task_id}: {e}")
-        # Heuristic WHOIS domain check fallback on LLM failure
         import re
         urls = re.findall(r'https?://(?:[-\w.]|(?:%[\da-fA-F]{2}))+', claim_text)
         if urls:
@@ -170,7 +206,7 @@ async def credibility_node(state: ScrutinGraphState, task: Task, deps: AgentDeps
     return state
 
 
-async def forensics_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, emit: Callable) -> ScrutinGraphState:
+async def forensics_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, emit: Callable[[str, dict[str, Any]], Any]) -> ScrutinGraphState:
     """Executes image pHash, ELA, and media transcription forensics."""
     logger.info(f"Run {state.run_id}: Executing Forensics Node for claim {task.claim_id}")
     await emit("agent_start", {"agent": "forensics", "claim_id": task.claim_id, "task_id": task.task_id, "iteration": state.iterations})
@@ -190,7 +226,7 @@ async def forensics_node(state: ScrutinGraphState, task: Task, deps: AgentDeps, 
     return state
 
 
-async def adversarial_node(state: ScrutinGraphState, deps: AgentDeps, emit: Callable) -> ScrutinGraphState:
+async def adversarial_node(state: ScrutinGraphState, deps: AgentDeps, emit: Callable[[str, dict[str, Any]], Any]) -> ScrutinGraphState:
     """Executes mandatory red-team evaluation mapping critiques to stance='mixed'."""
     logger.info(f"Run {state.run_id}: Executing Adversarial Node")
     await emit("agent_start", {"agent": "adversarial", "claim_id": "C0", "iteration": state.iterations})
@@ -223,20 +259,7 @@ async def finalizer_node(state: ScrutinGraphState, elapsed: float, budget_exhaus
     """Assembles structured final VerificationReport."""
     logger.info(f"Run {state.run_id}: Assembling Final Verification Report")
 
-    # Derive overall stance by majority tally across factual findings
-    stance_counts = {"supports": 0, "contradicts": 0, "mixed": 0, "insufficient_evidence": 0}
-    factual_findings = [f for f in state.findings if (f.get("agent") or "").lower() != "adversarial"]
-
-    for f in factual_findings:
-        s = f.get("stance", "insufficient_evidence")
-        if s in stance_counts:
-            stance_counts[s] += 1
-
-    total_factual = sum(stance_counts.values())
-    if total_factual == 0:
-        top_stance = "insufficient_evidence"
-    else:
-        top_stance = max(stance_counts.items(), key=lambda x: x[1])[0]
+    top_stance, stance_counts, total_factual = _tally_stances(state.findings)
 
     verdict_map = {
         "supports": "true",
@@ -258,20 +281,10 @@ async def finalizer_node(state: ScrutinGraphState, elapsed: float, budget_exhaus
         for k, v in state.evidence_store.items()
     ]
 
+    factual_findings = [f for f in state.findings if (f.get("agent") or "").lower() != "adversarial"]
     rationales = [f.get("rationale", "") for f in factual_findings if f.get("rationale")]
-    if rationales:
-        summary_text = " ".join(rationales[:2])
-    else:
-        summary_text = "Multi-agent evidence retrieval and domain credibility verification were performed across active web and database sources."
-
-    if verdict == "true":
-        ai_opinion = f"Based on cross-source corroboration, this claim appears to be factual and supported by primary evidence. {summary_text}"
-    elif verdict == "false":
-        ai_opinion = f"Based on empirical verification and primary records, this claim is unverified or debunked as misinformation. {summary_text}"
-    elif verdict == "misleading":
-        ai_opinion = f"This claim contains partial, contextually ambiguous, or exaggerated assertions. {summary_text}"
-    else:
-        ai_opinion = f"Primary source evidence is currently insufficient to definitively confirm or refute this assertion. {summary_text}"
+    summary_text = " ".join(rationales[:2]) if rationales else "Multi-agent evidence retrieval and domain credibility verification were performed across active web and database sources."
+    ai_opinion = _synthesize_ai_opinion(verdict, summary_text)
 
     report = VerificationReport(
         run_id=state.run_id,

@@ -1,6 +1,7 @@
 from __future__ import annotations
-from typing import Any, Optional, Literal
+from typing import Any, Literal
 from pydantic import BaseModel, Field
+from loguru import logger
 from app.protocols.messages import Plan, Finding
 
 
@@ -20,14 +21,14 @@ class Blackboard(BaseModel):
     evidence_store: dict[str, Any] = Field(default_factory=dict)
 
     # Agent findings — APPEND-ONLY
-    findings: list[dict] = Field(default_factory=list)
+    findings: list[dict[str, Any]] = Field(default_factory=list)
 
     # Orchestration
     plan: Plan = Field(default_factory=Plan)
     iterations: int = 0
     budget_limit: int = 20
-    provisional_verdict: Optional[str] = None
-    final_report: Optional[dict] = None
+    provisional_verdict: str | None = None
+    final_report: dict[str, Any] | None = None
 
     model_config = {"arbitrary_types_allowed": True}
 
@@ -35,9 +36,8 @@ class Blackboard(BaseModel):
         count = sum(1 for k in self.evidence_store if k.startswith(prefix))
         return f"{prefix}{count + 1}"
 
-    def store_evidence(self, prefix: str, data: dict) -> str:
+    def store_evidence(self, prefix: str, data: dict[str, Any]) -> str:
         """Store heavy evidence data and return pointer ID. Agents store IDs, not content."""
-        from loguru import logger
         eid = self.next_evidence_id(prefix)
         self.evidence_store[eid] = data
         logger.debug(f"Stored {eid} ← {data.get('url', '')[:60]}")
@@ -47,12 +47,12 @@ class Blackboard(BaseModel):
         """Append-only — never overwrites existing findings."""
         self.findings.append(finding.model_dump())
 
-    def get_findings_for_claim(self, claim_id: str) -> list[dict]:
-        return [f for f in self.findings if f["claim_id"] == claim_id]
+    def get_findings_for_claim(self, claim_id: str) -> list[dict[str, Any]]:
+        return [f for f in self.findings if f.get("claim_id") == claim_id]
 
-    def get_pending_requests(self) -> list[dict]:
+    def get_pending_requests(self) -> list[dict[str, Any]]:
         """Collect all outbound AgentRequests from all findings."""
-        requests = []
+        requests: list[dict[str, Any]] = []
         for f in self.findings:
             requests.extend(f.get("requests", []))
         return requests

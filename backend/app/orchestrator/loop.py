@@ -32,10 +32,10 @@ AGENT_MAP = {
 async def run_orchestrator(
     raw_input: str,
     input_type: str = "text",
-    config: dict | None = None,
+    config: dict[str, Any] | None = None,
     db_path: str = "scrutin.db",
     run_id: str | None = None,
-    on_event: Optional[Callable[[str, dict], Any]] = None,
+    on_event: Callable[[str, dict[str, Any]], Any] | None = None,
 ) -> VerificationReport:
     """
     LLM-Authoritative orchestration loop for Scrutin.

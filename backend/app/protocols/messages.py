@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Literal, Optional
+from typing import Literal, Any
 from pydantic import BaseModel, Field
 
 
@@ -10,7 +10,7 @@ class EvidenceItem(BaseModel):
     title: str = ""
     snippet: str
     source_domain: str
-    published_date: Optional[str] = None
+    published_date: str | None = None
     relevance_score: float = Field(ge=0.0, le=1.0)
     retrieval_backend: str
 
@@ -21,7 +21,7 @@ class AgentRequest(BaseModel):
     to_agent: str
     claim_id: str
     reason: str
-    payload: dict = Field(default_factory=dict)
+    payload: dict[str, Any] = Field(default_factory=dict)
 
 
 # ── 3. Task in the dynamic plan ───────────────────────────────────────────────
@@ -29,18 +29,18 @@ class Task(BaseModel):
     task_id: str
     agent: str
     claim_id: str
-    params: dict = Field(default_factory=dict)
+    params: dict[str, Any] = Field(default_factory=dict)
     completed: bool = False
     retry_count: int = 0
-    retry_reason: Optional[str] = None
-    parallel_group: Optional[int] = None  # Tasks with same group int are asyncio.gather()'d
+    retry_reason: str | None = None
+    parallel_group: int | None = None  # Tasks with same group int are asyncio.gather()'d
 
 
 # ── 4. Mutable plan ───────────────────────────────────────────────────────────
 class Plan(BaseModel):
     tasks: list[Task] = Field(default_factory=list)
 
-    def next_task(self) -> Optional[Task]:
+    def next_task(self) -> Task | None:
         return next((t for t in self.tasks if not t.completed), None)
 
     def mark_done(self, task_id: str) -> None:
@@ -104,7 +104,7 @@ class AgentReflection(BaseModel):
 class AdversarialCritique(BaseModel):
     verdict_stands: bool
     strongest_counter: str
-    unexamined_angle: Optional[str] = None
+    unexamined_angle: str | None = None
 
 
 # ── 9. Final report ───────────────────────────────────────────────────────────
@@ -114,14 +114,14 @@ class VerificationReport(BaseModel):
     overall_verdict: Literal["true", "false", "misleading", "unverifiable", "inconclusive"]
     credibility_score: float = Field(ge=0.0, le=100.0)
     confidence: float = Field(ge=0.0, le=1.0)
-    claim_findings: list[dict]
+    claim_findings: list[dict[str, Any]]
     adversarial_summary: str
     evidence_used: list[EvidenceItem]
     source_credibility_notes: str
     processing_time_seconds: float
     iterations_used: int
     budget_exhausted: bool
-    ai_opinion: Optional[str] = Field(default=None, description="AI narrative opinion explaining the final verdict rationale, key evidence highlights, and credibility analysis.")
+    ai_opinion: str | None = Field(default=None, description="AI narrative opinion explaining the final verdict rationale, key evidence highlights, and credibility analysis.")
 
 
 # ── 10. LLM-Authoritative Orchestrator Decisions ──────────────────────────────
@@ -138,5 +138,5 @@ class FinalizeAction(BaseModel):
 class OrchestratorDecision(BaseModel):
     """Tagged union for iteration-by-iteration Orchestrator LLM decision."""
     action: Literal["delegate", "finalize"] = Field(description="Action type: delegate or finalize")
-    delegate: Optional[DelegateAction] = None
-    finalize: Optional[FinalizeAction] = None
+    delegate: DelegateAction | None = None
+    finalize: FinalizeAction | None = None

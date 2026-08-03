@@ -2,7 +2,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from typing import Optional
+from typing import Any
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -17,13 +17,10 @@ app_cli = typer.Typer(
 console = Console()
 
 
-
-
-
 @app_cli.command("verify")
 def verify_cmd(
-    claim: Optional[str] = typer.Option(None, "--claim", help="Plain text claim to verify"),
-    url: Optional[str] = typer.Option(None, "--url", help="URL of an article to verify"),
+    claim: str | None = typer.Option(None, "--claim", help="Plain text claim to verify"),
+    url: str | None = typer.Option(None, "--url", help="URL of an article to verify"),
     trace: bool = typer.Option(False, "--trace", help="Show verbose agent trace output"),
     db_path: str = typer.Option("scrutin.db", "--db", help="Path to SQLite database"),
 ):

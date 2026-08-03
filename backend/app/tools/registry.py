@@ -1,12 +1,14 @@
 from __future__ import annotations
-from typing import Callable, Any
+import asyncio
+import inspect
 from dataclasses import dataclass
+from typing import Callable, Any
 
 @dataclass(slots=True)
 class ToolRegistration:
     name: str
     capability: str
-    fn: Callable
+    fn: Callable[..., Any]
     description: str = ""
     requires_config: bool = True
 
@@ -14,7 +16,7 @@ _REGISTRY: dict[str, ToolRegistration] = {}
 
 def register(capability: str, description: str = "", requires_config: bool = True):
     """Decorator to register a tool function by its capability tag."""
-    def decorator(fn: Callable) -> Callable:
+    def decorator(fn: Callable[..., Any]) -> Callable[..., Any]:
         _REGISTRY[capability] = ToolRegistration(
             name=fn.__name__, capability=capability, fn=fn, description=description, requires_config=requires_config
         )
@@ -26,13 +28,10 @@ def get(capability: str) -> ToolRegistration:
         raise KeyError(f"No tool registered for capability '{capability}'. Available: {list(_REGISTRY.keys())}")
     return _REGISTRY[capability]
 
-import inspect
-
-def call(capability: str, request: Any, config: dict | None = None) -> Any:
+def call(capability: str, request: Any, config: dict[str, Any] | None = None) -> Any:
     reg = get(capability)
     res = reg.fn(request, config or {}) if reg.requires_config else reg.fn(request)
     if inspect.isawaitable(res):
-        import asyncio
         try:
             loop = asyncio.get_running_loop()
             if loop.is_running():
@@ -41,7 +40,7 @@ def call(capability: str, request: Any, config: dict | None = None) -> Any:
             return asyncio.run(res)
     return res
 
-async def call_async(capability: str, request: Any, config: dict | None = None) -> Any:
+async def call_async(capability: str, request: Any, config: dict[str, Any] | None = None) -> Any:
     reg = get(capability)
     res = reg.fn(request, config or {}) if reg.requires_config else reg.fn(request)
     if inspect.isawaitable(res):

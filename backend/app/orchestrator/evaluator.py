@@ -1,13 +1,13 @@
 from __future__ import annotations
 import os
 from pydantic_ai import Agent
-from app.protocols.messages import EvidenceEvaluation, AgentReflection, compute_stopping_score
+from app.agents.base import get_agent_model
 from app.agents.prompts import get_prompt
+from app.protocols.messages import EvidenceEvaluation, AgentReflection, compute_stopping_score
+from app.utils.rate_limiter import gemini_acquire
 
 STOPPING_THRESHOLD = 0.85   # Minimum score to stop the loop (architecture §6)
 
-
-from app.agents.base import get_agent_model
 
 _evaluator_agent = Agent(
     get_agent_model("EVALUATOR_MODEL"),
@@ -47,7 +47,6 @@ async def evaluate(blackboard_summary: str) -> tuple[EvidenceEvaluation, float]:
     Returns (evaluation, stopping_score).
     stopping_score >= STOPPING_THRESHOLD → stop the loop.
     """
-    from app.utils.rate_limiter import gemini_acquire
     await gemini_acquire()
     result = await _evaluator_agent.run(blackboard_summary)
     ev = result.output
@@ -68,7 +67,6 @@ async def reflect(blackboard_summary: str, evaluation: EvidenceEvaluation) -> Ag
         f"- confidence_matches: {evaluation.confidence_matches_evidence}\n\n"
         f"Blackboard state:\n{blackboard_summary[:1000]}"
     )
-    from app.utils.rate_limiter import gemini_acquire
     await gemini_acquire()
     result = await _reflection_agent.run(prompt)
     return result.output

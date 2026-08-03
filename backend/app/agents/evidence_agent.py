@@ -1,5 +1,8 @@
 from __future__ import annotations
+import asyncio
 import os
+from typing import Any
+from loguru import logger
 from pydantic_ai import Agent
 from app.agents.base import AgentDeps, get_agent_model
 from app.agents.prompts import get_prompt
@@ -13,11 +16,10 @@ evidence_agent = Agent(
 )
 
 @evidence_agent.tool
-async def web_search_tool(ctx, query: str, date_from: str = "", date_to: str = "") -> dict:
+async def web_search_tool(ctx, query: str, date_from: str = "", date_to: str = "") -> dict[str, Any]:
     """Search the web for evidence about the claim using Serper (Google) or DuckDuckGo fallback."""
     from app.tools.search_tools import SearchRequest
     from app.tools.registry import call as registry_call
-    import asyncio
     try:
         req = SearchRequest(query=query, date_from=date_from or None, date_to=date_to or None)
         resp = await asyncio.to_thread(registry_call, "web_search", req, ctx.deps.config)
@@ -34,17 +36,15 @@ async def web_search_tool(ctx, query: str, date_from: str = "", date_to: str = "
             })
         return {"results": results_summary, "backend": resp.backend_used, "count": len(results_summary)}
     except Exception as e:
-        from loguru import logger
         logger.bind(agent="tool_error").error(f"Tool 'web_search_tool' failed: {e}")
         return {"results": [], "backend": "failed", "count": 0, "error": str(e)[:100]}
 
 
 @evidence_agent.tool
-async def factcheck_lookup_tool(ctx, query: str) -> dict:
+async def factcheck_lookup_tool(ctx, query: str) -> dict[str, Any]:
     """Check Google Fact Check Tools API for existing verdicts on this claim (fast path)."""
     from app.tools.reference_tools import FactCheckRequest
     from app.tools.registry import call as registry_call
-    import asyncio
     try:
         req = FactCheckRequest(query=query)
         resp = await asyncio.to_thread(registry_call, "fact_check", req, ctx.deps.config)
@@ -55,6 +55,5 @@ async def factcheck_lookup_tool(ctx, query: str) -> dict:
             ids.append(eid)
         return {"fc_ids": ids, "matches_found": resp.matches_found}
     except Exception as e:
-        from loguru import logger
         logger.bind(agent="tool_error").error(f"Tool 'factcheck_lookup_tool' failed: {e}")
         return {"fc_ids": [], "matches_found": 0, "error": str(e)[:100]}
