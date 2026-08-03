@@ -35,6 +35,13 @@ export interface FindingItem {
   rationale?: string;
 }
 
+export interface PlanTask {
+  task_id: string;
+  agent: string;
+  claim_id: string;
+  parallel_group?: string | null;
+}
+
 export interface UseVerificationReturn {
   verify: (input: VerifyRequest) => void;
   data: VerificationReport | undefined;
@@ -46,9 +53,9 @@ export interface UseVerificationReturn {
   agentStatuses: AgentStatusMap;
   currentStatusMessage: string;
   provisionalVerdict: string | null;
-  evaluatorScore: number | null;
   findings: FindingItem[];
   claims: Array<{ claim_id: string; claim_text: string }>;
+  planTasks: PlanTask[];
 }
 
 const INITIAL_AGENT_STATUSES: AgentStatusMap = {
@@ -68,9 +75,9 @@ export function useVerification(): UseVerificationReturn {
   const [agentStatuses, setAgentStatuses] = useState<AgentStatusMap>(INITIAL_AGENT_STATUSES);
   const [currentStatusMessage, setCurrentStatusMessage] = useState<string>("Initializing verification...");
   const [provisionalVerdict, setProvisionalVerdict] = useState<string | null>(null);
-  const [evaluatorScore, setEvaluatorScore] = useState<number | null>(null);
   const [findings, setFindings] = useState<FindingItem[]>([]);
   const [claims, setClaims] = useState<Array<{ claim_id: string; claim_text: string }>>([]);
+  const [planTasks, setPlanTasks] = useState<PlanTask[]>([]);
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const fallbackMutation = useVerify();
@@ -91,9 +98,9 @@ export function useVerification(): UseVerificationReturn {
     setAgentStatuses(INITIAL_AGENT_STATUSES);
     setCurrentStatusMessage("Initializing verification...");
     setProvisionalVerdict(null);
-    setEvaluatorScore(null);
     setFindings([]);
     setClaims([]);
+    setPlanTasks([]);
     fallbackMutation.reset();
   }, [cleanupSSE, fallbackMutation]);
 
@@ -107,7 +114,7 @@ export function useVerification(): UseVerificationReturn {
       if (input.claim) params.append("claim", input.claim);
       if (input.url) params.append("url", input.url);
 
-      const streamUrl = `${baseUrl}/verify/stream?${params.toString()}`;
+      const streamUrl = `${baseUrl}/api/verify/stream?${params.toString()}`;
 
       try {
         const es = new EventSource(streamUrl);
@@ -121,39 +128,61 @@ export function useVerification(): UseVerificationReturn {
 
             if (evtType === "start") {
               setCurrentStatusMessage(`Started run ${evtData.run_id}`);
+
+            } else if (evtType === "plan") {
+              // Backend sends initial task plan — show task count and seed planTasks
+              const tasks: PlanTask[] = (evtData.tasks ?? []).map((t: PlanTask) => t);
+              setPlanTasks(tasks);
+              setCurrentStatusMessage(`Planning: ${tasks.length} tasks queued`);
+
             } else if (evtType === "log") {
               setLogs((prev) => [...prev.slice(-99), evtData]);
               if (evtData.message) {
                 setCurrentStatusMessage(evtData.message);
               }
+
             } else if (evtType === "agent_start") {
               const agentName = evtData.agent as keyof AgentStatusMap;
               if (agentName in INITIAL_AGENT_STATUSES) {
                 setAgentStatuses((prev) => ({ ...prev, [agentName]: "running" }));
               }
               setCurrentStatusMessage(`Running ${evtData.agent} agent on ${evtData.claim_id}`);
+
             } else if (evtType === "finding") {
               const agentName = evtData.agent as keyof AgentStatusMap;
               if (agentName in INITIAL_AGENT_STATUSES) {
                 setAgentStatuses((prev) => ({ ...prev, [agentName]: "done" }));
               }
               setFindings((prev) => [...prev, evtData]);
+
             } else if (evtType === "decomposition") {
               if (evtData.claims) {
                 setClaims(evtData.claims);
                 setAgentStatuses((prev) => ({ ...prev, decomposition: "done" }));
               }
+
             } else if (evtType === "provisional_verdict") {
               setProvisionalVerdict(evtData.verdict);
-            } else if (evtType === "evaluator") {
-              setEvaluatorScore(evtData.score);
+
+            } else if (evtType === "orchestrator_decision") {
+              // Surface orchestrator reasoning as a status message
+              const action = evtData.action ?? "decision";
+              const reasoning = (evtData.reasoning ?? "").slice(0, 100);
+              setCurrentStatusMessage(`Orchestrator [${action}]: ${reasoning}`);
+              // If orchestrator delegated new tasks, append them to planTasks
+              if (evtData.tasks) {
+                setPlanTasks((prev) => [...prev, ...(evtData.tasks as PlanTask[])]);
+              }
+
             } else if (evtType === "final_report") {
               setData(evtData.report);
               setIsPending(false);
               cleanupSSE();
+
             } else if (evtType === "complete") {
               setIsPending(false);
               cleanupSSE();
+
             } else if (evtType === "error") {
               setError(new Error(evtData.detail || "Verification streaming error"));
               setIsPending(false);
@@ -212,8 +241,8 @@ export function useVerification(): UseVerificationReturn {
     agentStatuses,
     currentStatusMessage,
     provisionalVerdict,
-    evaluatorScore,
     findings,
     claims,
+    planTasks,
   };
 }

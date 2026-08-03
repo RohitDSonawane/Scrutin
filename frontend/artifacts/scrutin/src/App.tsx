@@ -28,9 +28,9 @@ function Home() {
     agentStatuses,
     currentStatusMessage,
     provisionalVerdict,
-    evaluatorScore,
     findings,
     claims,
+    planTasks,
   } = useVerification();
 
   const handleVerify = (text: string) => {
@@ -128,9 +128,9 @@ function Home() {
                         agentStatuses,
                         currentStatusMessage,
                         provisionalVerdict,
-                        evaluatorScore,
                         findings,
                         claims,
+                        planTasks,
                       }}
                     />
                   </motion.div>

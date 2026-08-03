@@ -1,11 +1,12 @@
 import { motion } from 'framer-motion';
-import { ArrowLeft, ShieldAlert, ShieldCheck, AlertTriangle, ShieldQuestion } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, ShieldAlert, ShieldCheck, AlertTriangle, ShieldQuestion, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import type { VerificationReport } from "@workspace/api-client-react";
 
 const highlightText = (text: string) => {
   if (!text) return null;
   // Match text in single quotes, double quotes, or parentheses
-  const regex = /(['"(][^'"()]+['")])/g;
+  const regex = /(['\"(][^'\"()]+['\")])/g;
   const parts = text.split(regex);
   return parts.map((part, i) => {
     if (regex.test(part)) {
@@ -15,7 +16,29 @@ const highlightText = (text: string) => {
   });
 };
 
+const CARD_STYLE = {
+  background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 248, 240, 0.35) 100%)',
+  backdropFilter: 'blur(20px)',
+  border: '1.5px solid rgba(198, 120, 69, 0.22)',
+  boxShadow: 'inset 0 1.5px 0 rgba(255, 255, 255, 0.65), inset 0 -1.5px 3px rgba(100, 70, 30, 0.08), 0 15px 30px rgba(100, 70, 30, 0.05)',
+};
+
+function RelevanceBar({ score }: { score: number }) {
+  const pct = Math.round(score * 100);
+  const color = pct >= 70 ? '#22c55e' : pct >= 40 ? '#f59e0b' : '#ef4444';
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+      <div style={{ width: '60px', height: '3px', borderRadius: '2px', backgroundColor: 'rgba(0,0,0,0.07)' }}>
+        <div style={{ width: `${pct}%`, height: '100%', borderRadius: '2px', backgroundColor: color }} />
+      </div>
+      <span style={{ fontFamily: 'monospace', fontSize: '10px', color: '#999' }}>{pct}%</span>
+    </div>
+  );
+}
+
 export function VerificationResult({ result, onReset }: { result: VerificationReport, onReset: () => void }) {
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+
   const getVerdictInfo = (verdict: string) => {
     switch(verdict) {
       case 'true': return { color: '#22c55e', bg: 'rgba(34, 197, 94, 0.1)', icon: ShieldCheck, label: 'True' };
@@ -52,7 +75,7 @@ export function VerificationResult({ result, onReset }: { result: VerificationRe
         </button>
       </div>
 
-      {/* Main Glass Card matching Section1Productivity */}
+      {/* Main Glass Card */}
       <motion.div 
         initial={{ opacity: 0, y: 40 }}
         animate={{ opacity: 1, y: 0 }}
@@ -112,12 +135,7 @@ export function VerificationResult({ result, onReset }: { result: VerificationRe
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
             className="flex-[0.4] rounded-[24px] p-6 md:p-8"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 248, 240, 0.35) 100%)',
-              backdropFilter: 'blur(20px)',
-              border: '1.5px solid rgba(198, 120, 69, 0.22)',
-              boxShadow: 'inset 0 1.5px 0 rgba(255, 255, 255, 0.65), inset 0 -1.5px 3px rgba(100, 70, 30, 0.08), 0 15px 30px rgba(100, 70, 30, 0.05)',
-            }}
+            style={CARD_STYLE}
           >
             <h3 style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', color: '#C67845', fontWeight: 600, marginBottom: '20px' }}>
               Credibility Score
@@ -145,12 +163,7 @@ export function VerificationResult({ result, onReset }: { result: VerificationRe
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
             className="flex-[0.6] rounded-[24px] p-6 md:p-8"
-            style={{
-              background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 248, 240, 0.35) 100%)',
-              backdropFilter: 'blur(20px)',
-              border: '1.5px solid rgba(198, 120, 69, 0.22)',
-              boxShadow: 'inset 0 1.5px 0 rgba(255, 255, 255, 0.65), inset 0 -1.5px 3px rgba(100, 70, 30, 0.08), 0 15px 30px rgba(100, 70, 30, 0.05)',
-            }}
+            style={CARD_STYLE}
           >
             <h3 style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', color: '#C67845', fontWeight: 600, marginBottom: '16px' }}>
               Source Trust & Analysis
@@ -167,13 +180,8 @@ export function VerificationResult({ result, onReset }: { result: VerificationRe
           initial={{ opacity: 0, y: 30 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
-          className="w-full rounded-[24px] p-6 md:p-8"
-          style={{
-            background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 248, 240, 0.35) 100%)',
-            backdropFilter: 'blur(20px)',
-            border: '1.5px solid rgba(198, 120, 69, 0.22)',
-            boxShadow: 'inset 0 1.5px 0 rgba(255, 255, 255, 0.65), inset 0 -1.5px 3px rgba(100, 70, 30, 0.08), 0 15px 30px rgba(100, 70, 30, 0.05)',
-          }}
+          className="w-full rounded-[24px] p-6 md:p-8 mb-6"
+          style={CARD_STYLE}
         >
           <h3 style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', color: '#C67845', fontWeight: 600, marginBottom: '16px' }}>
             Adversarial Check
@@ -182,7 +190,107 @@ export function VerificationResult({ result, onReset }: { result: VerificationRe
             {highlightText(result.adversarial_summary)}
           </p>
         </motion.div>
-        
+
+        {/* AI Opinion card — shown only when present */}
+        {result.ai_opinion && (
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full rounded-[24px] p-6 md:p-8 mb-6"
+            style={{
+              background: 'linear-gradient(135deg, rgba(198, 120, 69, 0.06) 0%, rgba(255, 248, 240, 0.5) 100%)',
+              backdropFilter: 'blur(20px)',
+              border: '1.5px solid rgba(198, 120, 69, 0.3)',
+              boxShadow: 'inset 0 1.5px 0 rgba(255, 255, 255, 0.65), 0 15px 30px rgba(100, 70, 30, 0.05)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#C67845' }} className="animate-pulse" />
+              <h3 style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', color: '#C67845', fontWeight: 600, margin: 0 }}>
+                AI Verdict Narrative
+              </h3>
+            </div>
+            <p style={{ fontFamily: 'var(--font-jakarta)', fontSize: '15.5px', fontWeight: 400, lineHeight: 1.7, color: '#3A2E24', margin: 0 }}>
+              {result.ai_opinion}
+            </p>
+          </motion.div>
+        )}
+
+        {/* Evidence Sources — collapsible */}
+        {result.evidence_used && result.evidence_used.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.7, duration: 0.8, ease: [0.22, 1, 0.36, 1] }}
+            className="w-full rounded-[24px] overflow-hidden"
+            style={CARD_STYLE}
+          >
+            <button
+              onClick={() => setEvidenceOpen(o => !o)}
+              className="w-full flex items-center justify-between p-6 md:px-8 md:py-6 cursor-pointer hover:bg-black/[0.015] transition-colors"
+              style={{ background: 'none', border: 'none', textAlign: 'left' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <h3 style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', textTransform: 'uppercase', letterSpacing: '1px', color: '#C67845', fontWeight: 600, margin: 0 }}>
+                  Evidence Sources
+                </h3>
+                <span style={{ fontFamily: 'monospace', fontSize: '11px', color: '#999', padding: '2px 8px', borderRadius: '8px', backgroundColor: 'rgba(198,120,69,0.08)' }}>
+                  {result.evidence_used.length}
+                </span>
+              </div>
+              {evidenceOpen
+                ? <ChevronUp className="w-4 h-4" style={{ color: '#C67845' }} />
+                : <ChevronDown className="w-4 h-4" style={{ color: '#C67845' }} />}
+            </button>
+
+            {evidenceOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+                style={{ padding: '0 24px 24px', display: 'flex', flexDirection: 'column', gap: '10px' }}
+              >
+                {result.evidence_used.map((ev, i) => (
+                  <div
+                    key={ev.source_id ?? i}
+                    style={{
+                      padding: '12px 16px', borderRadius: '14px',
+                      backgroundColor: 'rgba(255,255,255,0.5)',
+                      border: '1px solid rgba(198,120,69,0.1)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px', marginBottom: '6px' }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ fontFamily: 'var(--font-aeonik)', fontSize: '13px', fontWeight: 500, color: '#171717' }}>
+                          {ev.title ?? ev.source_domain}
+                        </span>
+                        {ev.url && (
+                          <a
+                            href={ev.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', marginLeft: '8px', fontFamily: 'var(--font-aeonik)', fontSize: '11px', color: '#C67845', textDecoration: 'none' }}
+                          >
+                            {ev.source_domain} <ExternalLink style={{ width: '10px', height: '10px' }} />
+                          </a>
+                        )}
+                      </div>
+                      <RelevanceBar score={ev.relevance_score} />
+                    </div>
+                    {ev.snippet && (
+                      <p style={{ fontFamily: 'var(--font-jakarta)', fontSize: '13px', fontWeight: 300, lineHeight: 1.5, color: '#666', margin: 0 }}>
+                        {ev.snippet}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </motion.div>
+            )}
+          </motion.div>
+        )}
+
       </motion.div>
     </div>
   );

@@ -79,5 +79,7 @@ export interface VerificationReport {
   iterations_used: number;
   /** Whether the iteration budget was exhausted */
   budget_exhausted: boolean;
+  /** AI narrative opinion explaining the final verdict rationale, key evidence highlights, and credibility analysis */
+  ai_opinion?: string | null;
 }
 
