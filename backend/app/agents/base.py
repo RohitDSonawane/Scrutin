@@ -1,11 +1,11 @@
 from __future__ import annotations
+import os
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 from loguru import logger
-from aiolimiter import AsyncLimiter
 
-import asyncio
-
-from app.utils.rate_limiter import groq_acquire
+if TYPE_CHECKING:
+    from app.protocols.blackboard import Blackboard
 
 
 @dataclass
@@ -14,8 +14,8 @@ class AgentDeps:
     Injected into every agent via PydanticAI dependency injection.
     Holds the shared Blackboard reference and the config dict with all API keys.
     """
-    blackboard: "Blackboard"     # type: app.protocols.blackboard.Blackboard
-    config: dict = field(default_factory=dict)
+    blackboard: Blackboard
+    config: dict[str, Any] = field(default_factory=dict)
     agent_budget: int = 5        # Max tool calls this agent may make this invocation
 
 
@@ -24,13 +24,12 @@ def get_agent_logger(agent_name: str):
     return logger.bind(agent=agent_name)
 
 
-def get_agent_model(env_var_name: str):
+def get_agent_model(env_var_name: str) -> Any:
     """
     Factory that returns an OpenRouterModel or string model target based on configuration.
     All model names are resolved exclusively from environment variables.
     Cascade: env_var_name -> DEFAULT_MODEL -> ORCHESTRATOR_MODEL.
     """
-    import os
     from pydantic_ai.models.openrouter import OpenRouterModel
     from pydantic_ai.providers.openrouter import OpenRouterProvider
 
@@ -43,6 +42,7 @@ def get_agent_model(env_var_name: str):
         raise RuntimeError(
             f"No model configured: set {env_var_name}, DEFAULT_MODEL, or ORCHESTRATOR_MODEL in .env"
         )
+
     key = os.getenv("OPENROUTER_API_KEY", "")
 
     if key and (raw.startswith("google/") or raw.startswith("openrouter/") or "gemma" in raw):
