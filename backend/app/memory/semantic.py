@@ -42,6 +42,16 @@ def embed_claim(text: str, api_key: str) -> list[float]:
     return emb[:EMBEDDING_DIM]
 
 
+def cosine_similarity(v1: list[float], v2: list[float]) -> float:
+    import math
+    dot_product = sum(a * b for a, b in zip(v1, v2))
+    mag1 = math.sqrt(sum(a * a for a in v1))
+    mag2 = math.sqrt(sum(b * b for b in v2))
+    if not mag1 or not mag2:
+        return 0.0
+    return dot_product / (mag1 * mag2)
+
+
 async def upsert_claim(
     claim_id: str,
     claim_text: str,
@@ -51,54 +61,64 @@ async def upsert_claim(
     db_path: str = "scrutin.db",
 ) -> None:
     """
-    Store a verified claim embedding in Pinecone AND write metadata to claim_similarity_cache.
-    Called by Orchestrator at run completion.
-
-    Two-store pattern:
-    1. Pinecone: vector for semantic similarity search
-    2. SQLite claim_similarity_cache: metadata for fast offline lookup + stats
+    Local-First Vector Store:
+    1. Embeds claim text via Google GenAI SDK (if GOOGLE_API_KEY present).
+    2. Writes metadata + vector_json to local SQLite claim_similarity_cache.
+    3. Syncs to Pinecone cloud index if PINECONE_API_KEY is present.
     """
-    api_key = config.get("PINECONE_API_KEY") or config.get("GOOGLE_API_KEY")
-    if not api_key or not config.get("PINECONE_API_KEY"):
-        return  # Skip if Pinecone not configured
+    google_key = config.get("GOOGLE_API_KEY")
+    if not google_key:
+        return
+
+    import json
+    import asyncio
+    from loguru import logger
+
+    pinecone_vector_id = f"{run_id}_{claim_id}"
+    vector: list[float] = []
 
     try:
-        import asyncio
-        vector = await asyncio.to_thread(embed_claim, claim_text, config["GOOGLE_API_KEY"])
-        pc = await asyncio.to_thread(_get_pinecone, config["PINECONE_API_KEY"])
-        index = pc.Index(PINECONE_INDEX_NAME)
-        pinecone_vector_id = f"{run_id}_{claim_id}"
-        await asyncio.to_thread(
-            index.upsert,
-            vectors=[{
-                "id": pinecone_vector_id,
-                "values": vector,
-                "metadata": {"run_id": run_id, "verdict": verdict, "text": claim_text[:200]}
-            }],
-            namespace=CLAIMS_NAMESPACE,
-        )
-        # Write metadata to SQLite claim_similarity_cache (Table 4 in database-schema.md)
-        import aiosqlite
-        async with aiosqlite.connect(db_path, timeout=30.0, isolation_level=None) as db:
-            await db.execute("PRAGMA journal_mode=WAL")
-            await db.execute("BEGIN IMMEDIATE")
-            try:
-                await db.execute(
-                    """INSERT OR REPLACE INTO claim_similarity_cache
-                       (claim_id, claim_text, pinecone_vector_id, run_id, verdict, created_at)
-                       VALUES (?, ?, ?, ?, ?, datetime('now'))""",
-                    (claim_id, claim_text[:500], pinecone_vector_id, run_id, verdict)
-                )
-                await db.execute("COMMIT")
-            except Exception as e:
-                try:
-                    await db.execute("ROLLBACK")
-                except Exception:
-                    pass
-                raise e
+        vector = await asyncio.to_thread(embed_claim, claim_text, google_key)
     except Exception as e:
-        from loguru import logger
-        logger.warning(f"Pinecone upsert failed (non-fatal): {e}")
+        logger.warning(f"Claim embedding failed (non-fatal): {e}")
+
+    # Optional Pinecone Cloud Sync
+    if config.get("PINECONE_API_KEY") and vector:
+        try:
+            pc = await asyncio.to_thread(_get_pinecone, config["PINECONE_API_KEY"])
+            index = pc.Index(PINECONE_INDEX_NAME)
+            await asyncio.to_thread(
+                index.upsert,
+                vectors=[{
+                    "id": pinecone_vector_id,
+                    "values": vector,
+                    "metadata": {"run_id": run_id, "verdict": verdict, "text": claim_text[:200]}
+                }],
+                namespace=CLAIMS_NAMESPACE,
+            )
+        except Exception as e:
+            logger.warning(f"Pinecone sync failed (non-fatal): {e}")
+
+    # Always write to local SQLite claim_similarity_cache
+    import aiosqlite
+    async with aiosqlite.connect(db_path, timeout=30.0, isolation_level=None) as db:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("BEGIN IMMEDIATE")
+        try:
+            vector_json = json.dumps(vector) if vector else None
+            await db.execute(
+                """INSERT OR REPLACE INTO claim_similarity_cache
+                   (claim_id, claim_text, pinecone_vector_id, run_id, verdict, vector_json, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, datetime('now'))""",
+                (claim_id, claim_text[:500], pinecone_vector_id, run_id, verdict, vector_json)
+            )
+            await db.execute("COMMIT")
+        except Exception as e:
+            try:
+                await db.execute("ROLLBACK")
+            except Exception:
+                pass
+            logger.error(f"Local SQLite claim_similarity_cache write failed: {e}")
 
 
 async def search_similar_claims(
@@ -106,37 +126,84 @@ async def search_similar_claims(
     config: dict,
     top_k: int = 3,
     score_threshold: float = 0.92,
+    db_path: str = "scrutin.db",
 ) -> list[dict]:
     """
-    Search Pinecone for semantically similar past claims.
-    Score >= 0.92 → very likely the same claim (use as fast-path).
+    Search for semantically similar past claims.
+    1. Tries Pinecone search if PINECONE_API_KEY is configured.
+    2. Falls back to local cosine similarity search over SQLite claim_similarity_cache.
+    Score >= 0.92 → fast-path episodic match.
     Returns list of {claim_id, run_id, verdict, score, text}.
     """
-    if not config.get("PINECONE_API_KEY") or not config.get("GOOGLE_API_KEY"):
+    google_key = config.get("GOOGLE_API_KEY")
+    if not google_key:
         return []
 
+    import json
+    from loguru import logger
+
     try:
-        vector = embed_claim(claim_text, config["GOOGLE_API_KEY"])
-        pc = _get_pinecone(config["PINECONE_API_KEY"])
-        index = pc.Index(PINECONE_INDEX_NAME)
-        results = index.query(
-            vector=vector,
-            top_k=top_k,
-            include_metadata=True,
-            namespace=CLAIMS_NAMESPACE,
-        )
-        matches = []
-        for m in results.get("matches", []):
-            if m["score"] >= score_threshold:
-                matches.append({
-                    "claim_id": m["id"],
-                    "run_id": m["metadata"].get("run_id"),
-                    "verdict": m["metadata"].get("verdict"),
-                    "score": m["score"],
-                    "text": m["metadata"].get("text"),
-                })
-        return matches
+        vector = embed_claim(claim_text, google_key)
     except Exception as e:
-        from loguru import logger
-        logger.warning(f"Pinecone search failed (non-fatal): {e}")
+        logger.warning(f"Claim embedding failed for search (non-fatal): {e}")
+        return []
+
+    # 1. Try Pinecone if key present
+    if config.get("PINECONE_API_KEY"):
+        try:
+            pc = _get_pinecone(config["PINECONE_API_KEY"])
+            index = pc.Index(PINECONE_INDEX_NAME)
+            results = index.query(
+                vector=vector,
+                top_k=top_k,
+                include_metadata=True,
+                namespace=CLAIMS_NAMESPACE,
+            )
+            matches = []
+            for m in results.get("matches", []):
+                if m["score"] >= score_threshold:
+                    matches.append({
+                        "claim_id": m["id"],
+                        "run_id": m["metadata"].get("run_id"),
+                        "verdict": m["metadata"].get("verdict"),
+                        "score": m["score"],
+                        "text": m["metadata"].get("text"),
+                    })
+            if matches:
+                return matches
+        except Exception as e:
+            logger.warning(f"Pinecone query failed (falling back to local vector search): {e}")
+
+    # 2. Local vector search over SQLite claim_similarity_cache
+    try:
+        import aiosqlite
+        async with aiosqlite.connect(db_path, timeout=30.0) as db:
+            await db.execute("PRAGMA journal_mode=WAL")
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT claim_id, run_id, verdict, claim_text, vector_json FROM claim_similarity_cache WHERE vector_json IS NOT NULL"
+            ) as cursor:
+                rows = await cursor.fetchall()
+
+        scored_matches = []
+        for r in rows:
+            try:
+                cached_vec = json.loads(r["vector_json"])
+                if cached_vec:
+                    sim_score = cosine_similarity(vector, cached_vec)
+                    if sim_score >= score_threshold:
+                        scored_matches.append({
+                            "claim_id": r["claim_id"],
+                            "run_id": r["run_id"],
+                            "verdict": r["verdict"],
+                            "score": sim_score,
+                            "text": r["claim_text"],
+                        })
+            except Exception:
+                continue
+
+        scored_matches.sort(key=lambda x: x["score"], reverse=True)
+        return scored_matches[:top_k]
+    except Exception as e:
+        logger.warning(f"Local SQLite vector search failed (non-fatal): {e}")
         return []

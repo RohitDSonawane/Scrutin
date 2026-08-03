@@ -57,6 +57,10 @@ def run_migrations(db_path: str = "scrutin.db") -> None:
     """Run once on startup. Idempotent — safe to call every time."""
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA)
+    try:
+        conn.execute("ALTER TABLE claim_similarity_cache ADD COLUMN vector_json TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     conn.close()
     print(f"[DB] Migrations applied to {db_path}")
 
