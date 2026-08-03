@@ -41,13 +41,12 @@ DECOMPOSITION RULES:
    - Opinion: "The government handled this terribly" → NOT checkable, flag as opinion
    - Framing: Misleading headline vs. article body → flag as framing mismatch
 
-2. Classify each claim by type:
-   - "statistical": Contains a number, percentage, or rate
-   - "causal": Implies X caused Y
-   - "quotation": Attributes a statement to a named person
-   - "event_occurrence": Claims a specific event happened
-   - "image_video_authenticity": Claims an image/video is real or from a specific event
-   - "identity_attribution": Claims a specific person said or did something
+2. Classify each claim into one of these domain taxonomy types:
+   - "scientific_medical": Assertions regarding health, clinical treatments, biology, or climate science
+   - "statistical": Contains a specific number, percentage, financial figure, or rate
+   - "political_news": Breaking news events, policy assertions, or government statements
+   - "multimodal_media": Authenticity or historical context of an attached image, audio, or video file
+   - "identity_quote": Direct quotes or statements attributed to named public figures
 
 3. Flag the ONE "load-bearing" claim — the claim whose truth/falsity most determines
    the overall credibility of the submission. If nothing else, check this one.
