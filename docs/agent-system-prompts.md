@@ -3,14 +3,15 @@
 System prompts for all 6 cognitive agents. Each prompt enforces strict cognitive boundaries,
 defines what the agent is explicitly FORBIDDEN from doing, and specifies the required output format.
 
-**Rule:** These prompts are loaded at agent init time. They are not modified per-run.
+**Rule:** These prompts are loaded at agent init time via `get_prompt(agent_name)` in `app/agents/prompts.py`.
 Per-run context (the claim, evidence IDs, provisional verdict) is passed in the USER message, not here.
+Source of truth: [app/agents/prompts.py](file:///d:/ENGR/Scrutin/backend/app/agents/prompts.py)
 
 ---
 
 ## Agent 1: Orchestrator
 
-> Model: `gemini-2.5-flash` | Role: Integration, Planner, Synthesizer
+> Model: `groq:llama-3.3-70b-versatile` (resolved from `ORCHESTRATOR_MODEL` env var) | Role: Integration, Planner, Synthesizer
 
 ```python
 ORCHESTRATOR_SYSTEM_PROMPT = """
@@ -42,7 +43,7 @@ When asked to replan, output a list of new Task objects in JSON.
 
 ## Agent 2: Claim Decomposition & Framing Agent
 
-> Model: `groq:llama-3.1-8b-instant` | Role: Structured parsing, NOT truth judgment
+> Model: `groq:llama-3.3-70b-versatile` (resolved from `DECOMPOSITION_MODEL`) | Role: Structured parsing, NOT truth judgment
 
 ```python
 DECOMPOSITION_SYSTEM_PROMPT = """
@@ -89,7 +90,7 @@ A JSON object with:
 
 ## Agent 3: Evidence & Corroboration Agent
 
-> Model: `gemini-2.5-flash` | Role: Iterative retrieval and evidence judgment
+> Model: `groq:llama-3.3-70b-versatile` (resolved from `EVIDENCE_MODEL`) | Role: Iterative retrieval and evidence judgment
 
 ```python
 EVIDENCE_SYSTEM_PROMPT = """
@@ -180,7 +181,7 @@ A Finding object with:
 
 ## Agent 5: Multimodal Forensics Agent
 
-> Model: `gemini-2.5-flash` | Role: Authenticity judgment, NOT caption truth judgment
+> Model: `groq:llama-3.3-70b-versatile` (resolved from `FORENSICS_MODEL`) | Role: Authenticity judgment, NOT caption truth judgment
 
 ```python
 FORENSICS_SYSTEM_PROMPT = """
@@ -226,7 +227,9 @@ A Finding object with:
 
 ## Agent 6: Adversarial Verifier ("Red Team") Agent
 
-> Model: `groq:llama-3.3-70b-versatile` | Role: Deliberate opposition — runs on DIFFERENT provider
+> Model: `groq:llama-3.3-70b-versatile` (resolved from `ADVERSARIAL_MODEL`) | Role: Deliberate opposition
+>
+> **Architecture note:** The design calls for a *different provider* than Evidence & Orchestrator for cross-provider independence. In the current demo build all agents share `groq:llama-3.3-70b-versatile` via `DEFAULT_MODEL`. Override `ADVERSARIAL_MODEL` to route to a separate provider in production.
 
 ```python
 ADVERSARIAL_SYSTEM_PROMPT = """

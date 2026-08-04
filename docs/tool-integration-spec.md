@@ -131,9 +131,11 @@ class DomainVerifyRequest(BaseModel):
     domain: str = Field(description="The domain name to verify (e.g. bbc-news-update.com).")
 
 class DomainVerifyResponse(BaseModel):
+    domain: str
     registered_at: str
     registrar: str
     is_recent: bool = Field(description="True if domain was registered within the last 180 days.")
+    domain_age_days: int = Field(description="Number of days since domain registration.")
 ```
 
 * **Execution Logic:** Uses the Python library `python-whois` to perform free domain lookups.
@@ -162,39 +164,73 @@ class FactCheckDbResponse(BaseModel):
 
 ---
 
-## 3. Central Tool Registry Configuration (`registry.py`)
+## 3. Central Tool Registry Configuration (`registry.py` + `_register_all.py`)
 
-Using **PydanticAI**, tools are decorated and registered inside `app/tools/registry.py`. Each agent declares which tools it can access:
+Tools are **registered by capability tag** in `tools/_register_all.py` and dispatched by `registry.call()`. Agents invoke tools via `asyncio.to_thread(registry_call, capability, request, config)` inside their `@agent.tool` decorated methods:
 
 ```python
-from pydantic_ai import Agent
-from app.tools.search_tools import search_web_tool
-from app.tools.forensic_tools import transcribe_media_tool, analyze_image_tool
-from app.tools.provenance_tools import verify_domain_tool
-from app.tools.reference_tools import query_factcheck_db_tool
+# tools/_register_all.py — imported ONCE at startup (app lifespan)
+from app.tools.registry import register
+from app.tools.search_tools import web_search, fetch_article
+from app.tools.reference_tools import query_factcheck_db
+from app.tools.provenance_tools import verify_domain
+from app.tools.forensic_tools import transcribe_media, analyze_image
 
-# Setup orchestrator agent (delegates queries)
-orchestrator = Agent('google-gla:gemini-2.5-flash')
+@register("web_search", description="Serper.dev or DuckDuckGo fallback")
+def _web_search(request, config): return web_search(request, config)
 
-# Setup Evidence Agent
-evidence_agent = Agent('google-gla:gemini-2.5-flash')
-evidence_agent.tool(search_web_tool)
-evidence_agent.tool(query_factcheck_db_tool)
+@register("fact_check", description="Google Fact Check Tools API")
+def _fact_check(request, config): return query_factcheck_db(request, config)
 
-# Setup Forensics Agent
-forensics_agent = Agent('google-gla:gemini-2.5-flash')
-forensics_agent.tool(transcribe_media_tool)
-forensics_agent.tool(analyze_image_tool)
+@register("whois", description="WHOIS domain lookup", requires_config=False)
+def _whois(request, config=None): return verify_domain(request)
+
+@register("transcribe_media", description="Groq Whisper transcription")
+def _transcribe(request, config): return transcribe_media(request, config)
+
+@register("analyze_image", description="pHash/ELA image forensics", requires_config=False)
+def _analyze(request, config=None): return analyze_image(request)
+```
+
+Inside agents, tools are registered with the `@agent.tool` decorator:
+
+```python
+# agents/evidence_agent.py
+@evidence_agent.tool
+async def web_search_tool(ctx, query: str, date_from: str = "", date_to: str = "") -> dict:
+    from app.tools.search_tools import SearchRequest
+    from app.tools.registry import call as registry_call
+    req = SearchRequest(query=query, date_from=date_from or None, date_to=date_to or None)
+    resp = await asyncio.to_thread(registry_call, "web_search", req, ctx.deps.config)
+    # Store each result on the Blackboard by ID — never pass raw content to LLM
+    for item in resp.results:
+        eid = ctx.deps.blackboard.store_evidence("WB", item.model_dump())
+    return {"results": [...], "backend": resp.backend_used, "count": len(resp.results)}
 ```
 
 ---
 
 ## 4. Environment Variables Reference (`.env`)
 
-Add the following configuration lines to the project's root `.env` file to support the integrated stack:
+Add the following configuration lines to the project's root `.env` file:
 
 ```env
-# Google Serper API Keys (For Web Search & RIS)
+# Model configuration (PydanticAI model strings)
+DEFAULT_MODEL=groq:llama-3.3-70b-versatile      # Fallback for all agents
+ORCHESTRATOR_MODEL=groq:llama-3.3-70b-versatile  # Override per-agent
+DECOMPOSITION_MODEL=groq:llama-3.3-70b-versatile
+EVIDENCE_MODEL=groq:llama-3.3-70b-versatile
+CREDIBILITY_MODEL=groq:llama-3.3-70b-versatile
+FORENSICS_MODEL=groq:llama-3.3-70b-versatile
+ADVERSARIAL_MODEL=groq:llama-3.3-70b-versatile
+EMBEDDING_MODEL=gemini-embedding-001             # 768-dim, Google genai SDK
+
+# LLM Provider API Keys
+GROQ_API_KEY=gsk_...
+GOOGLE_API_KEY=AIza...                           # Gemini + embedding access
+OPENROUTER_API_KEY=sk-or-...                     # Optional: for OpenRouter-hosted models
+
+# Google Serper API Keys (Web Search — up to 4 keys, round-robin rotation)
 SERPER_API_KEY=your_primary_key_here
 SERPER_API_KEY_2=key_2
 SERPER_API_KEY_3=key_3
@@ -203,17 +239,13 @@ SERPER_API_KEY_4=key_4
 # Google Fact Check Tools API Key
 GOOGLE_FACT_CHECK_API_KEY=your_google_dev_key
 
-# Transcription APIs
-GROQ_API_KEY=gsk_...
-OPENAI_API_KEY=sk-...
+# Vector Store (optional — falls back to local cosine if not set)
+PINECONE_API_KEY=pc-...
 
-# News Database Keys
-NEWSAPI_KEY=news_key
-NEWS_DATA_API_KEY=newsdata_key
+# Database
+SCRUTIN_DB_PATH=scrutin.db                       # Default: current directory
 
-# Reddit API Creds (PRAW Wrapper)
-REDDIT_CLIENT_ID=client_id
-REDDIT_CLIENT_SECRET=client_secret
-REDDIT_USERNAME=username
-REDDIT_USER_AGENT=hackathon_verifier_v1
+# API Server
+CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+PORT=8000
 ```

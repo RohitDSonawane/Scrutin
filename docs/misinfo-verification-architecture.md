@@ -120,36 +120,49 @@ Single FastAPI process. No microservices, no LangGraph-style graph DSL. The orch
 
 ```
 app/
-  api/                # FastAPI routers — /verify, /status/{run_id}, /health
+  api.py              # FastAPI app — /api/verify, /api/verify/stream (SSE), /api/healthz, /api/recent
+  server.py           # uvicorn entrypoint: python -m app.server
+  cli.py              # Typer CLI: verify / stats / test
   orchestrator/
-    loop.py           # the plan-act-observe-reflect-delegate-retry controller (Section 6)
-    planner.py        # builds/updates the dynamic task plan
-    evaluator.py       # reflection / self-critique / stopping-criteria logic
+    loop.py           # PRIMARY: run_orchestrator() — LLM-authoritative plan-act-observe-reflect loop
+    planner.py        # bootstrap_plan() — seeds initial task queue from Blackboard state
+  graph/              # SECONDARY: LangGraph-style deterministic state machine (testing/offline use)
+    engine.py         # run_graph_engine() — linear node traversal without Orchestrator LLM
+    nodes.py          # decomposition_node, evidence_node, credibility_node, ... finalizer_node
+    state.py          # ScrutinGraphState (Pydantic)
   agents/
-    base.py           # shared agent interface (PydanticAI Agent wrapper + logging + budget)
-    orchestrator_agent.py
-    decomposition_agent.py
-    evidence_agent.py
-    credibility_agent.py
-    forensics_agent.py
-    adversarial_agent.py
+    base.py           # AgentDeps (DI container), get_agent_model() (env-var cascade resolver)
+    prompts.py        # All 6 system prompts as PROMPTS dict — loaded once at agent init
+    orchestrator_agent.py  # → OrchestratorDecision (delegate | finalize)
+    decomposition_agent.py # → DecompositionOutput (list[AtomicClaim])
+    evidence_agent.py      # → Finding (+ web_search_tool + factcheck_lookup_tool)
+    credibility_agent.py   # → Finding (+ whois_lookup_tool + get_existing_reputation_tool)
+    forensics_agent.py     # → Finding (+ transcribe_media_tool + analyze_image_tool)
+    adversarial_agent.py   # → AdversarialCritique (NO tools by design — §3.6)
   tools/
-    registry.py       # central tool registry, capability-tagged
-    search_tools.py    # web/news/fact-check search
-    forensic_tools.py  # ELA, deepfake classifiers, ASR, OCR, metadata
-    provenance_tools.py # WHOIS, publisher DB, archive lookups
+    registry.py            # register(), call(), call_async() — capability dispatch
+    _register_all.py       # One-time import at startup that populates registry
+    search_tools.py        # web_search(), fetch_article(), rerank_snippets()
+    reference_tools.py     # query_factcheck_db(), search_pubmed(), search_arxiv(), search_semantic_scholar()
+    forensic_tools.py      # transcribe_media() (Groq Whisper), analyze_image() (pHash/ELA)
+    provenance_tools.py    # verify_domain() (WHOIS via python-whois)
+    lib/                   # Low-level drivers (grounding.py, web_fetch_keyless.py, http.py, transcribe.py)
   protocols/
-    messages.py        # Pydantic models for inter-agent Finding/Request/Critique objects
-    blackboard.py       # shared run-scoped state store
+    messages.py            # ALL data models: EvidenceItem, Task, Plan, Finding, OrchestratorDecision,
+                           #   EvidenceEvaluation, AdversarialCritique, VerificationReport
+    blackboard.py          # Blackboard — shared mutable run state + evidence store + audit trail
   memory/
-    working.py          # per-run scratchpad (in-process / Redis)
-    episodic.py         # past runs, for similar-claim recall (Postgres)
-    semantic.py         # vector store: fact-check corpus, known-debunked media (pgvector)
-    longterm.py         # durable source-reputation + calibration store (Postgres)
+    migrations.py          # SQLite schema (4 tables) + run_migrations() — called at startup
+    episodic.py            # record_run(), find_similar_run(), get_run_stats() — aiosqlite
+    semantic.py            # embed_claim(), upsert_claim(), search_similar_claims() — Pinecone + local cosine
+    longterm.py            # propose_reputation_update(), get_reputation() — EDC pipeline, aiosqlite
   evaluation/
-    calibration.py      # tracks predicted-confidence vs. outcome over time
-    tracing.py           # OpenTelemetry spans per agent step
-  main.py                # FastAPI app assembly
+    calibration.py         # log_calibration_entry(), compute_ece(), evaluate_verdict_precision_recall()
+  utils/
+    logger.py              # configure_terminal_logger() — loguru structured output
+    env_validator.py       # validate_env() → config dict (key presence checks)
+    rate_limiter.py        # groq_acquire(), gemini_acquire() — asyncio.Lock token-bucket
+    serper_pool.py         # SerperKeyPool — round-robin key rotation + 429 exhaustion tracking
 ```
 
 ### 5.1 Memory architecture (four tiers, deliberately distinct)
@@ -275,12 +288,16 @@ Agent('groq:llama-3.1-8b-instant', ...)
 
 | Agent | Model | Rationale |
 |---|---|---|
-| Orchestrator | Gemini 2.5 Flash | integration point — needs the strongest available reasoning in this stack |
-| Evidence & Corroboration | Gemini 2.5 Flash | multi-step tool-use judgment over retrieved text |
-| **Multimodal Forensics** | **Gemini 2.5 Flash** | *(corrected)* must take image/video/audio input natively — the model previously assigned here (`llama-3.3-70b-versatile`) is text-only and cannot process media at all |
-| **Adversarial Verifier** | **Groq `llama-3.3-70b-versatile`** | *(corrected)* deliberately placed on a different provider than Evidence & Orchestrator — the Adversarial agent's entire value (Section 1) is a structurally independent second read of the same evidence; same-provider placement would share the Evidence agent's training biases and blind spots, quietly undermining the one thing that justifies this being multi-agent instead of one model role-playing |
-| Source & Provenance Credibility | Groq `llama-3.3-70b-versatile` | rubric-driven, structured judgment — doesn't need frontier-tier reasoning |
-| Claim Decomposition | Groq `llama-3.1-8b-instant` | closer to structured parsing than open-ended reasoning; cheap and fast |
+| **Orchestrator** | `groq:llama-3.3-70b-versatile` | Decides delegate/finalize per iteration — resolved from `ORCHESTRATOR_MODEL` env var |
+| **Evidence & Corroboration** | `groq:llama-3.3-70b-versatile` | Multi-step tool-use over retrieved text — resolved from `EVIDENCE_MODEL` |
+| **Multimodal Forensics** | `groq:llama-3.3-70b-versatile` | Text-based forensic synthesis; tool calls handle media I/O — resolved from `FORENSICS_MODEL` |
+| **Adversarial Verifier** | `groq:llama-3.3-70b-versatile` | Deliberate same provider for demo scope; cross-provider independence is the production target — resolved from `ADVERSARIAL_MODEL` |
+| **Source & Provenance Credibility** | `groq:llama-3.3-70b-versatile` | Rubric-driven structured judgment — resolved from `CREDIBILITY_MODEL` |
+| **Claim Decomposition** | `groq:llama-3.3-70b-versatile` | Structured parsing — resolved from `DECOMPOSITION_MODEL` |
+
+> **Current state (2026-08-04):** All agents default to `groq:llama-3.3-70b-versatile` via `DEFAULT_MODEL` env var. The multi-provider assignment from the design above is the production target — override per-agent by setting `ORCHESTRATOR_MODEL`, `EVIDENCE_MODEL`, etc. No LiteLLM involved.
+
+Net constraint: `groq_acquire()` rate-limiter (2.4s period) gates all Groq calls. At 5+ agents per run, the minimum run time from rate-limiting alone is ~12s at free tier.
 
 Net effect of the correction: same two providers, same free tiers, zero added cost — just a reassignment that gives Forensics the input capability it needs and gives Adversarial the cross-provider independence it exists for.
 
@@ -288,14 +305,14 @@ Net effect of the correction: same two providers, same free tiers, zero added co
 
 | Tier | General stack (§8) | Demo build | Notes |
 |---|---|---|---|
-| Working | Redis | in-process Python dict | fine for single-session demo; loses state across process restarts and doesn't support concurrent multi-user sessions — the known limitation, not a hidden one |
-| Episodic | Postgres | SQLite (`aiosqlite`) | enable `PRAGMA journal_mode=WAL` on the connection — without it, concurrent async writes from multiple agents mid-run will throw "database is locked" |
-| Semantic | pgvector | Pinecone (free tier: 1 index, 2 GB) | free tier gives one index only — use **namespaces** within it to separate claim-embeddings from media-hashes rather than provisioning a second index |
-| Long-term / reputation | Postgres | separate SQLite table | same engine as episodic for now, split out only if scale demands it |
+| Working | Redis | in-process Python dict (`Blackboard`) | Fine for single-session demo; no persistence across process restarts. Blackboard is flushed to SQLite at run completion as audit trail. |
+| Episodic | Postgres | SQLite WAL (`aiosqlite`) | `PRAGMA journal_mode=WAL` applied at every connection. Two-write pattern: raw JSON always, structured fields only on clean completion. |
+| Semantic | pgvector | Pinecone + SQLite cosine fallback | `search_similar_claims()` tries Pinecone first, falls back to local cosine over `claim_similarity_cache`. Score ≥ 0.92 = fast-path cache hit. |
+| Long-term / reputation | Postgres | `source_reputation` SQLite table | EDC pipeline: delta > 2 points required to commit. Prevents noise writes from single bad runs. |
 
 Two completeness notes carried over from the general design, easy to lose in a demo build:
-- The blackboard must be **flushed into the SQLite episodic log at run completion** (not only held in the in-process dict) — otherwise a crash mid-run loses the entire audit trail, which Section 5.3 treats as non-negotiable for this kind of platform.
-- **Embedding model naming, corrected:** `text-embedding-3-small` is an OpenAI model name and does not exist on Gemini. Use `gemini-embedding-001` for claim-text semantic search. For the Forensics agent's "have we seen this media before" check, prefer **perceptual hashing** (`imagehash` / a video-hash library) over semantic embeddings — that check wants to catch the *same* image/video re-uploaded, not a semantically similar one; a pHash lookup is cheaper and more precise for that specific job. Reserve embeddings (`gemini-embedding-001`, or `gemini-embedding-2` if genuinely cross-modal semantic search is needed later) for the claim-similarity case only.
+- The blackboard must be **flushed into the SQLite episodic log at run completion** (not only held in the in-process dict) — otherwise a crash mid-run loses the entire audit trail. `Blackboard.flush_to_sqlite()` is called inside a `try/finally` block in `orchestrator/loop.py` to guarantee this even on exceptions.
+- **Embedding model naming, corrected:** `text-embedding-3-small` is an OpenAI model name and does not exist on Gemini. Use `gemini-embedding-001` for claim-text semantic search (768-dim). The current `embed_claim()` in `memory/semantic.py` uses the `google.genai.Client` SDK correctly. For the Forensics agent's "have we seen this media before" check, prefer **perceptual hashing** (`imagehash`) over semantic embeddings — a pHash lookup catches the *same* image re-uploaded, not a semantically similar one. Reserve embeddings for the claim-similarity case only.
 
 ### 10.3 Supporting stack
 

@@ -76,6 +76,7 @@ class Task(BaseModel):
     completed: bool = False
     retry_count: int = 0
     retry_reason: Optional[str] = None          # Set by evaluator on retry
+    parallel_group: int | None = None           # Tasks with same group run via asyncio.gather()
 
 
 class Plan(BaseModel):
@@ -226,13 +227,15 @@ class Blackboard(BaseModel):
         return [f for f in self.findings if f["claim_id"] == claim_id]
 
     def flush_to_sqlite(self, conn: sqlite3.Connection) -> None:
-        """Must be called at run completion — even on error. Non-negotiable audit trail."""
+        """Must be called at run completion — even on error. Non-negotiable audit trail.
+        Called from asyncio.to_thread() inside a BEGIN IMMEDIATE / COMMIT block.
+        Note: commit is handled by the caller — do NOT call conn.commit() here.
+        """
         conn.execute(
             """INSERT OR REPLACE INTO episodic_runs (run_id, raw_input, data_json, created_at)
                VALUES (?, ?, ?, datetime('now'))""",
             (self.run_id, self.raw_input, self.model_dump_json())
         )
-        conn.commit()
 ```
 
 ---
@@ -254,6 +257,52 @@ class VerificationReport(BaseModel):
     processing_time_seconds: float
     iterations_used: int
     budget_exhausted: bool          # True if stopped due to budget, not confidence
+    ai_opinion: str | None = None   # Synthesized 2-3 sentence AI narrative verdict explanation
+```
+
+---
+
+## 8. Orchestrator Decision Schema
+
+The Orchestrator LLM outputs one of these per iteration. Python routes based on `action`.
+
+```python
+class DelegateDecision(BaseModel):
+    reasoning: str
+    tasks: list[Task]
+
+class FinalizeDecision(BaseModel):
+    reasoning: str
+    report: VerificationReport
+
+class OrchestratorDecision(BaseModel):
+    """Structured output of the Orchestrator LLM. Python reads action and routes accordingly."""
+    action: Literal["delegate", "finalize"]
+    delegate: DelegateDecision | None = None    # Present when action == "delegate"
+    finalize: FinalizeDecision | None = None    # Present when action == "finalize"
+```
+
+---
+
+## 9. Adversarial Critique Schema
+
+```python
+class AdversarialCritique(BaseModel):
+    """Output of the Adversarial Verifier agent. Converted to a Finding by the loop."""
+    verdict_stands: bool = Field(
+        description="True if the provisional verdict survives adversarial challenge."
+    )
+    strongest_counter: str = Field(
+        description="The most compelling counter-argument or alternative explanation."
+    )
+    confidence_adjustment: float = Field(
+        default=0.0, ge=-1.0, le=0.0,
+        description="Suggested downward adjustment to the Orchestrator's confidence (negative value)."
+    )
+    requires_new_evidence: bool = Field(
+        default=False,
+        description="True if the adversarial critique identifies a specific evidence gap that warrants another search pass."
+    )
 ```
 
 ---

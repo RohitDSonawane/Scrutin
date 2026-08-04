@@ -86,13 +86,14 @@ CREATE TABLE IF NOT EXISTS calibration_log (
 
 ```sql
 -- Lightweight lookup table. Pinecone handles vector search;
--- this table is the metadata store for matched claim IDs.
+-- this table is the metadata store + local vector cache for cosine fallback.
 CREATE TABLE IF NOT EXISTS claim_similarity_cache (
     claim_id        TEXT PRIMARY KEY,
     claim_text      TEXT NOT NULL,
     pinecone_vector_id TEXT NOT NULL,
     run_id          TEXT NOT NULL REFERENCES episodic_runs(run_id),
     verdict         TEXT NOT NULL,
+    vector_json     TEXT,              -- JSON array of 768 floats; NULL if embedding failed
     created_at      TEXT NOT NULL DEFAULT (datetime('now'))
 );
 ```
@@ -161,6 +162,11 @@ def run_migrations(db_path: str = "scrutin.db") -> None:
     """Run once on startup. Idempotent — safe to call every time."""
     conn = sqlite3.connect(db_path)
     conn.executescript(SCHEMA)
+    # Add vector_json column if not present (forward migration for existing DBs)
+    try:
+        conn.execute("ALTER TABLE claim_similarity_cache ADD COLUMN vector_json TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
     conn.close()
     print(f"[DB] Migrations applied to {db_path}")
 
@@ -206,19 +212,23 @@ def init_pinecone(api_key: str) -> Pinecone:
 ### Embedding Model
 
 ```python
-# Use gemini-embedding-001 for claim text similarity
-# Do NOT use text-embedding-3-small — that is an OpenAI model name, not a Gemini one.
+# Use the google.genai.Client SDK (not the deprecated google.generativeai module)
+# Set EMBEDDING_MODEL env var to 'gemini-embedding-001' (768 dim)
 
-import google.generativeai as genai
+from google import genai
+import os
 
 def embed_claim(text: str, api_key: str) -> list[float]:
-    genai.configure(api_key=api_key)
-    result = genai.embed_content(
-        model="models/gemini-embedding-001",
-        content=text,
-        task_type="retrieval_document",
+    client = genai.Client(api_key=api_key)
+    embedding_model = os.getenv("EMBEDDING_MODEL", "gemini-embedding-001")
+    # Strip "models/" prefix if present
+    if embedding_model.startswith("models/"):
+        embedding_model = embedding_model.replace("models/", "")
+    response = client.models.embed_content(
+        model=embedding_model,
+        contents=text,
     )
-    return result["embedding"]
+    return response.embeddings[0].values[:768]  # Truncate to EMBEDDING_DIM
 ```
 
 ### Media Perceptual Hash (Forensics fast-path)

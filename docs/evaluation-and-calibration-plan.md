@@ -156,22 +156,19 @@ from app.protocols.messages import Plan, Task
 
 def test_loop_stops_within_budget():
     """The orchestrator must stop within budget_limit iterations."""
-    bb = Blackboard(
-        run_id="test-001",
-        raw_input="The vaccine caused 50,000 deaths",
-        plan=Plan(tasks=[
-            Task(task_id="T1", agent="decomposition", claim_id="C1"),
-            Task(task_id="T2", agent="evidence", claim_id="C1"),
-            Task(task_id="T3", agent="adversarial", claim_id="C1"),
-        ]),
-        budget_limit=10,
-    )
+    import asyncio
+    from app.orchestrator.loop import run_orchestrator
 
     with TestModel.patch_all():   # Patch all PydanticAI agents to return TestModel outputs
-        report = asyncio.run(run_orchestrator(bb, agent_registry={}))
+        report = asyncio.run(run_orchestrator(
+            raw_input="The vaccine caused 50,000 deaths",
+            input_type="text",
+            config={},
+            db_path=":memory:",
+        ))
 
-    assert bb.iterations <= bb.budget_limit
     assert report is not None
+    assert report.iterations_used <= 20  # budget_limit default
 
 def test_adversarial_forces_replan():
     """If adversarial returns verdict_stands=False, the Orchestrator must replan."""
@@ -312,25 +309,33 @@ def print_calibration_report(db_path: str = "scrutin.db") -> None:
 
 ## 6. Quick Start — Running Everything From Terminal
 
-```bash
-# 1. Install dependencies
+```powershell
+# 1. Activate virtualenv (Windows)
+.venv\Scripts\Activate.ps1
+
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# 2. Set up .env
-cp .env.example .env   # Fill in SERPER_API_KEY, GROQ_API_KEY, GOOGLE_API_KEY
+# 3. Set up .env
+cp .env.example .env   # Fill in GROQ_API_KEY, GOOGLE_API_KEY, SERPER_API_KEY
 
-# 3. Run database migrations
+# 4. Run database migrations (once)
 python -m app.memory.migrations
 
-# 4. Run a single verification (live LLM calls)
+# 5a. Run a single verification via CLI (live LLM calls)
 python -m app.cli verify --claim "The Eiffel Tower was built in 1889" --trace
 
-# 5. Run unit tests (no LLM calls — uses TestModel)
+# 5b. Start the API server
+python -m app.server     # → http://localhost:8000
+# Then stream a verification over SSE:
+# curl "http://localhost:8000/api/verify/stream?claim=Eiffel+Tower+built+1889"
+
+# 6. Run unit tests (no LLM calls — uses TestModel)
 pytest tests/ -v
 
-# 6. Run ground-truth regression suite (live LLM calls, costs ~10 Serper queries)
-python -m app.cli test --fixtures tests/fixtures/ground_truth.py
+# 7. Run ground-truth regression suite (live LLM calls, costs ~10 Serper queries)
+python -m app.cli test
 
-# 7. View calibration stats
+# 8. View calibration stats
 python -m app.cli stats
 ```

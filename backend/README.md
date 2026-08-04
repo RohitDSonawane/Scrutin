@@ -1,151 +1,257 @@
-# Scrutin
+# Scrutin — Backend
 
-[![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](https://www.python.org/)
+[![Python Version](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.14-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Framework: PydanticAI](https://img.shields.io/badge/Framework-PydanticAI-red.svg)](https://ai.pydantic.dev/)
 
-**Scrutin** is a production-grade, terminal-first multi-agent misinformation verification and fact-checking engine. Built to combat fake news, media manipulation, and domain-level spoofing, it coordinates six independent cognitive agents through a hub-and-spoke Blackboard architecture. 
-
-Unlike traditional graphs that rely on rigid DSL control flows, Scrutin operates on a plain Python orchestration loop with Reflexion-based self-critique and adversarial red-teaming.
+**Scrutin** is a production-grade multi-agent misinformation verification engine. It coordinates six independent cognitive agents through a hub-and-spoke Blackboard architecture, coordinated by an LLM-Authoritative orchestration loop backed by FastAPI + SSE streaming.
 
 ---
 
 ## System Architecture
 
-Scrutin implements a decoupled hub-and-spoke state orchestration using a shared Blackboard. Sub-agents do not import or call each other; they communicate exclusively by placing typed `AgentRequest` messages on the Blackboard.
-
-```mermaid
-graph TD
-    Input[Raw Claim / URL Input] --> Decomp[Decomposition Agent]
-    Decomp --> |Atomic Claims| Blackboard[Shared Blackboard]
-    Blackboard --> |Retrieve Evidence| Evidence[Evidence & Corroboration Agent]
-    Blackboard --> |Domain Analysis| Cred[Source Credibility Agent]
-    Blackboard --> |Media Tampering| Forensics[Multimodal Forensics Agent]
-    Evidence --> |Google Fact Check & Serper| Blackboard
-    Cred --> |WHOIS Registration & Domain Trust| Blackboard
-    Forensics --> |Whisper Transcripts & pHash| Blackboard
-    Blackboard --> |Provisional Verdict| Adv[Adversarial Verifier Agent]
-    Adv --> |Attack & Critique| Blackboard
-    Blackboard --> |Stopping Score Evaluation| Evaluator[Self-Critique Evaluator]
-    Evaluator --> |Replan & Retry Task| Decomp
-    Evaluator --> |Final Report Synthesis| Verdict[Structured Verification Report]
+```
+Raw Input (claim / URL)
+        │
+        ▼
+ ┌─────────────────────────────────────────────────────────────┐
+ │                    orchestrator/loop.py                      │
+ │  ┌──────────────────────────────────────────────────────┐   │
+ │  │                   Blackboard (shared state)          │   │
+ │  │  atomic_claims{}  evidence_store{}  findings[]       │   │
+ │  │  plan.tasks[]     provisional_verdict  final_report  │   │
+ │  └──────────────────────────────────────────────────────┘   │
+ │       ▲                                                       │
+ │  ┌────┴──────────────────────────────────────────────────┐   │
+ │  │  Orchestrator LLM (Groq llama-3.3-70b-versatile)     │   │
+ │  │  Per-iteration: DELEGATE tasks | FINALIZE report      │   │
+ │  └───────────┬───────────────────────────────────────────┘   │
+ │              │                                                │
+ │    ┌─────────▼──────────────────────────────────────────┐    │
+ │    │        Sub-Agent Execution (asyncio.gather)        │    │
+ │    │                                                    │    │
+ │    │  Decomposition  →  Evidence  →  Credibility        │    │
+ │    │  Forensics      →  Adversarial                     │    │
+ │    └────────────────────────────────────────────────────┘    │
+ └─────────────────────────────────────────────────────────────┘
+        │
+        ▼
+ VerificationReport (JSON) + SSE event stream
 ```
 
 ---
 
-## Key Features
+## Agents
 
-*   **Atomic Claim Decomposition:** Parses complex articles, media transcripts, and screenshots into list-form checkable claims, separating factual assertions from rhetoric.
-*   **Dual-Path Retrieval:** Google Fact Check API database fast-path lookup, falling back to multi-key Serper.dev Google search queries with a Jina Reader Markdown scraper.
-*   **Source Credibility (EDC Memory):** Evaluates publisher registry age via WHOIS and tracks domain track records using an Extract-Deduplicate-Commit (EDC) SQLite pipeline.
-*   **Adversarial Verification:** A dedicated "Red Team" agent operating on an independent model provider (Groq Llama) tries to poke holes in the provisional verdict, preventing model alignment bias.
-*   **Reflexion Self-Critique:** A deterministic-picker evaluator grades evidence quality against a stopping score. If criteria are unmet, the agent reflects, logs the lesson in episodic memory, and replans.
-*   **WAL-Mode SQLite Persistence:** Concurrency-safe local episodic memory ensuring multiple async requests run without database locking.
+| Agent | Model | Role | Tools |
+|---|---|---|---|
+| **Orchestrator** | `groq:llama-3.3-70b-versatile` | Decides tasks per iteration (DELEGATE / FINALIZE) | None |
+| **Decomposition** | `groq:llama-3.3-70b-versatile` | Parses raw input into atomic, typed, checkable claims | None (text only) |
+| **Evidence** | `groq:llama-3.3-70b-versatile` | Iterative web search & Fact Check API retrieval | `web_search_tool`, `factcheck_lookup_tool` |
+| **Credibility** | `groq:llama-3.3-70b-versatile` | WHOIS domain age & reputation scoring (5-dim rubric) | `whois_lookup_tool`, `get_existing_reputation_tool` |
+| **Forensics** | `groq:llama-3.3-70b-versatile` | Deepfake/pHash/transcript analysis for media claims | `transcribe_media_tool`, `analyze_image_tool` |
+| **Adversarial** | `groq:llama-3.3-70b-versatile` | Red-team attack on provisional verdict (no tools by design) | None |
+
+All models are resolved from `.env` via the `get_agent_model()` factory. Any agent can be independently pointed at a different provider by setting its `*_MODEL` env var.
 
 ---
 
-## Tech Stack & Model Alignment
+## Orchestration Flow
 
-| Component | Technology | Model / Provider |
+1. **`run_orchestrator()`** in `orchestrator/loop.py` is the single entry point for both CLI and API.
+2. A **Blackboard** is created to hold shared mutable state (claims, evidence, findings, plan).
+3. The **planner** bootstraps an initial `Plan` with a `decomposition` task.
+4. **Fast-path cache** — before any LLM calls, `search_similar_claims()` queries Pinecone (or local SQLite cosine search) for semantically similar past claims. Exact match (≥ 0.95 cosine) → return cached report immediately.
+5. **Main loop** — while `budget_remaining()`:
+   - **Step A:** Execute any pending `Plan.tasks` using `asyncio.gather()` for parallel groups.
+   - **Step B:** When the plan is empty, call the Orchestrator LLM for the next decision:
+     - `delegate` → add new tasks to the plan (e.g. add adversarial task, re-run evidence with tighter query)
+     - `finalize` → accept `VerificationReport` from LLM, break loop
+6. **Adversarial guard** — if the Orchestrator tries to finalize before an adversarial task ran, the loop forces one.
+7. **Fallback report** — if the Orchestrator LLM fails or the budget exhausts, `_build_final_report()` assembles a heuristic report from Blackboard state.
+8. **Persistence** — reputation updates (EDC pipeline), semantic embeddings (Pinecone + SQLite), and episodic run records are committed in `finally`.
+
+---
+
+## SSE Event Stream
+
+`GET /api/verify/stream?claim=<claim_text>` opens a Server-Sent Events connection.
+
+Each SSE message is `data: <json>\n\n` where the JSON has `{"type": <event_type>, "data": {...}}`.
+
+| Event | When | Key Payload Fields |
 |---|---|---|
-| **Orchestrator** | Python `while` loop | Gemini 2.5 Flash |
-| **Agents Framework** | PydanticAI | Pydantic v2 validation |
-| **Paid Search API** | Serper.dev | Key pool round-robin |
-| **Free Search Fallback** | DuckDuckGo Keyless scraper | Stateless |
-| **Decomposition Agent** | Groq Llama 3.1 8B | Instant parser |
-| **Evidence & Forensics** | Google Cloud APIs | Gemini 2.5 Flash |
-| **Adversarial & Credibility** | Groq Llama 3.3 70B | Llama-3.3-70b-versatile |
-| **Episodic Memory** | SQLite WAL mode | `aiosqlite` |
-| **Semantic Memory** | Pinecone | `gemini-embedding-001` (786-dim) |
+| `start` | Run begins | `run_id`, `raw_input`, `input_type` |
+| `plan` | After bootstrap or Orchestrator delegate | `iteration`, `tasks[]` |
+| `agent_start` | Before each agent runs | `agent`, `claim_id`, `task_id`, `iteration` |
+| `decomposition` | After Decomposition agent | `claims: [{claim_id, claim_text}]` |
+| `finding` | After Evidence/Credibility/Forensics/Adversarial | `agent`, `claim_id`, `stance`, `confidence`, `rationale` |
+| `provisional_verdict` | After each finding | `verdict` |
+| `orchestrator_decision` | After Orchestrator LLM responds | `action`, `reasoning`, `tasks?` |
+| `log` | Every loguru `INFO`+ log line | `timestamp`, `level`, `agent`, `message` |
+| `final_report` | At run completion | `report: VerificationReport` |
+| `complete` | Last event | `run_id`, `processing_time_seconds` |
+| `error` | On exception | `detail` |
 
 ---
 
-## Installation & Setup
+## API Routes
+
+| Method | Route | Description |
+|---|---|---|
+| `GET` | `/api/healthz` | Health check → `{"status": "ok"}` |
+| `POST` | `/api/verify` | Synchronous verification (waits for full result) |
+| `GET` | `/api/verify/stream` | SSE streaming verification (`?claim=` or `?url=`) |
+| `POST` | `/api/verify/stream` | SSE streaming via request body |
+| `GET` | `/api/recent` | Last 5 distinct verified claims from episodic memory |
+| `GET` | `/api/docs` | Swagger UI |
+| `GET` | `/api/openapi.json` | OpenAPI schema |
+
+**CORS:** `localhost:5173`, `localhost:3000`, `127.0.0.1:5173` by default. Override via `CORS_ORIGINS` env var.
+
+---
+
+## VerificationReport Schema
+
+```python
+class VerificationReport(BaseModel):
+    run_id: str
+    raw_input: str
+    overall_verdict: Literal["true", "false", "misleading", "unverifiable", "inconclusive"]
+    credibility_score: float          # 0–100
+    confidence: float                 # 0.0–1.0
+    claim_findings: list[dict]        # all agent Finding objects
+    adversarial_summary: str
+    evidence_used: list[EvidenceItem] # url, snippet, source_domain, relevance_score
+    source_credibility_notes: str
+    processing_time_seconds: float
+    iterations_used: int
+    budget_exhausted: bool
+    ai_opinion: str | None            # synthesized AI narrative verdict explanation
+```
+
+---
+
+## Database Schema (SQLite — `scrutin.db`)
+
+| Table | Purpose |
+|---|---|
+| `episodic_runs` | Full audit trail — every run's raw Blackboard JSON + structured verdict |
+| `source_reputation` | Per-domain credibility score (EDC pipeline, updated by Credibility agent) |
+| `calibration_log` | Agent stated confidence vs. actual outcome (for ECE computation) |
+| `claim_similarity_cache` | Claim text + embedding vector + verdict for local cosine search |
+
+All tables use `PRAGMA journal_mode=WAL` for concurrent async safety. All async writes use `aiosqlite`. Schema is applied idempotently by `app/memory/migrations.py` at startup.
+
+---
+
+## Tool Registry
+
+Tools are registered via `@register(capability)` in `tools/_register_all.py` and resolved by agents via `registry.call(capability, request, config)`.
+
+| Capability | Function | Provider |
+|---|---|---|
+| `web_search` | `search_tools.web_search()` | Serper.dev (4-key pool) → DuckDuckGo keyless fallback |
+| `fetch_article` | `search_tools.fetch_article()` | Jina Reader (keyless, returns Markdown) |
+| `fact_check` | `reference_tools.query_factcheck_db()` | Google Fact Check Tools API |
+| `whois` | `provenance_tools.verify_domain()` | `python-whois` library |
+| `transcribe_media` | `forensic_tools.transcribe_media()` | Groq Whisper API |
+| `analyze_image` | `forensic_tools.analyze_image()` | `imagehash` (pHash) + ELA |
+
+**Serper key pool** (`utils/serper_pool.py`): round-robin across `SERPER_API_KEY`, `SERPER_API_KEY_2/3/4`. Exhausted keys (429 response) are marked and skipped for the session.
+
+**Rate limiters** (`utils/rate_limiter.py`):
+- Groq: 2.4s between calls (~25 RPM headroom)
+- Gemini: 5.0s between calls (~12 RPM headroom)
+
+---
+
+## Memory Layers
+
+| Layer | Module | Technology | Description |
+|---|---|---|---|
+| **Episodic** | `memory/episodic.py` | SQLite WAL | Full audit trail per run + find_similar_run() text search |
+| **Semantic** | `memory/semantic.py` | Pinecone + SQLite cosine | Claim embeddings via `gemini-embedding-001` (768-dim). Fallback to local cosine if Pinecone unavailable |
+| **Long-term** | `memory/longterm.py` | SQLite WAL | Domain reputation — EDC pipeline (Δ > 2 points to commit) |
+| **Calibration** | `evaluation/calibration.py` | SQLite | Expected Calibration Error (ECE) computation from `calibration_log` |
+
+---
+
+## Installation & Running
 
 ### Prerequisites
-*   Python 3.11 or 3.12
-*   Optional: `ffmpeg` (for media file transcriptions)
+- Python 3.11+ (tested on 3.11, 3.12, 3.14)
+- `ffmpeg` (optional — for media transcription only)
 
-### 1. Clone & Setup Virtual Environment
-```bash
-git clone https://github.com/yourusername/scrutin.git
-cd scrutin
-python -m venv .venv
-# On Windows:
-.venv\Scripts\activate
-# On macOS/Linux:
-source .venv/bin/activate
+### 1. Virtual environment
+```powershell
+cd d:\ENGR\Scrutin\backend
+.\.venv\Scripts\Activate.ps1
 ```
 
-### 2. Install Dependencies
-```bash
+### 2. Install dependencies
+```powershell
 pip install -r requirements.txt
 ```
 
-### 3. Environment Configuration
-Copy the environment template and populate it with your provider credentials:
-```bash
-cp .env.example .env
+### 3. Configure `.env`
+Copy `.env.example` → `.env`. Minimum required keys:
 ```
-*At a minimum, configure `GOOGLE_API_KEY`, `GROQ_API_KEY`, and `SERPER_API_KEY` in `.env`.*
+GROQ_API_KEY=...
+GOOGLE_API_KEY=...
+GOOGLE_FACT_CHECK_API_KEY=...
+SERPER_API_KEY=...
+DEFAULT_MODEL=groq:llama-3.3-70b-versatile
+EMBEDDING_MODEL=gemini-embedding-001
+```
 
-### 4. Run SQLite Migrations
-Initialize the local memory schema (creates 4 index-optimized tables in `scrutin.db`):
-```bash
+### 4. Run DB migrations (once)
+```powershell
 python -m app.memory.migrations
 ```
 
----
+### 5. Start the API server
+```powershell
+python -m app.server      # → http://localhost:8000
+```
 
-## CLI Usage Guide
+### CLI usage
+```powershell
+# Verify a claim (full agent trace)
+python -m app.cli verify --claim "Pune has the highest rate of blockchain startups in India" --trace
 
-Scrutin is fully interactive and configurable directly via the command line:
+# Verify via article URL
+python -m app.cli verify --url "https://example.com/news"
 
-```bash
-# Verify a claim with full agent trace logger outputs
-python -m app.cli verify --claim "The Eiffel Tower was built in 1889" --trace
-
-# Verify an article by scraping its URL
-python -m app.cli verify --url "https://example.com/breaking-news-article"
-
-# Run the ground-truth verification regression suite (5 test claims)
-python -m app.cli test
-
-# Query SQLite episodic logs and print calibration metrics (ECE score)
+# View calibration + run stats
 python -m app.cli stats
 ```
 
 ---
 
-## Expected Terminal Output
+## Environment Variables
 
-```
-12:04:33 | INFO     | orchestrator       | Run started: a1b2c3 | input_type=text
-12:04:33 | INFO     | decomposition      | Decomposed → 1 claim: C1 (event_occurrence)
-12:04:34 | INFO     | orchestrator       | Iteration 1: Launching evidence on C1
-12:04:34 | INFO     | evidence_agent     | Fast-path: Google Fact Check → 0 matches
-12:04:35 | INFO     | evidence_agent     | Searching: 'Eiffel Tower construction year' → 8 results via serper
-12:04:35 | INFO     | evidence_agent     | Stored WB1 (en.wikipedia.org)
-12:04:36 | INFO     | evidence_agent     | Finding: stance=supports, confidence=0.94
-12:04:36 | INFO     | orchestrator       | Iteration 2: Launching credibility on domain wikipedia.org
-12:04:37 | INFO     | credibility_agent  | Finding: stance=mixed, confidence=0.90
-12:04:37 | INFO     | orchestrator       | Iteration 3: Launching adversarial_agent
-12:04:39 | INFO     | adversarial        | verdict_stands=True ✓
-12:04:39 | INFO     | orchestrator       | Stopping criteria met ✓
-
-╭──────────────── Scrutin Verification Report ─────────────────╮
-│  Run ID     a1b2c3                                            │
-│  Verdict    TRUE                                              │
-│  Score      85 / 100                                          │
-│  Confidence 92%                                               │
-│  Iterations 3 / 20                                            │
-│  Time       5.4s                                              │
-│  Sources    en.wikipedia.org, britannica.com                  │
-╰───────────────────────────────────────────────────────────────╯
-```
+| Variable | Default | Description |
+|---|---|---|
+| `DEFAULT_MODEL` | — | Fallback model for all agents |
+| `ORCHESTRATOR_MODEL` | — | Orchestrator LLM |
+| `DECOMPOSITION_MODEL` | — | Decomposition agent |
+| `EVIDENCE_MODEL` | — | Evidence agent |
+| `CREDIBILITY_MODEL` | — | Credibility agent |
+| `FORENSICS_MODEL` | — | Forensics agent |
+| `ADVERSARIAL_MODEL` | — | Adversarial agent |
+| `EMBEDDING_MODEL` | `gemini-embedding-001` | Claim embedding model |
+| `OPENROUTER_API_KEY` | — | Required for OpenRouter-hosted models (google/, gemma) |
+| `GOOGLE_API_KEY` | — | Gemini + embedding access |
+| `GROQ_API_KEY` | — | Groq Llama access |
+| `SERPER_API_KEY[_2/_3/_4]` | — | Web search (up to 4 keys, round-robin) |
+| `GOOGLE_FACT_CHECK_API_KEY` | — | Google Fact Check Tools API |
+| `PINECONE_API_KEY` | — | Semantic vector store (optional) |
+| `SCRUTIN_DB_PATH` | `scrutin.db` | SQLite database path |
+| `CORS_ORIGINS` | `localhost:5173,...` | Comma-separated allowed origins |
 
 ---
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](../LICENSE).
