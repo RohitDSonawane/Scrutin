@@ -10,7 +10,7 @@ Whenever this command is run, follow these instructions:
 
 ---
 
-## 🔄 The Phase Execution Loop
+## The Phase Execution Loop
 
 For the targeted Phase $N$:
 

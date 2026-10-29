@@ -41,7 +41,7 @@ app/
         └── arxiv.py            # Academic papers index scraper
 ```
 
-### ❌ Clutter Removed (Deliberately Excluded)
+### Clutter Removed (Deliberately Excluded)
 1. **Paid X Scrapers:** [xai_x.py](file:///d:/ENGR/Scrutin/Refrences/toolcall/toolcall/30dayss______/source_lib/xai_x.py), [xquik.py](file:///d:/ENGR/Scrutin/Refrences/toolcall/toolcall/30dayss______/source_lib/xquik.py), and [xurl_x.py](file:///d:/ENGR/Scrutin/Refrences/toolcall/toolcall/30dayss______/source_lib/xurl_x.py) (we don't have Grok or Enterprise X API keys; `bird_x.py` is our sole X capability).
 2. **Flaky Social Scrapers:** `instagram.py`, `linkedin.py`, and `tiktok.py` (highly unstable for a short hackathon; they trigger captchas immediately).
 3. **Local Wikipedia Vector Index:** `wiki_dump.py` (requires hosting a heavy FAISS index; online Wikipedia API is lightweight and up-to-date).

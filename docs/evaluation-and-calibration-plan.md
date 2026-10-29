@@ -301,7 +301,7 @@ def print_calibration_report(db_path: str = "scrutin.db") -> None:
     print(f"  Total runs evaluated: {total}")
     print(f"  Correct verdicts:     {correct} ({100*correct//max(total,1)}%)")
     print(f"  Expected Calibration  ")
-    print(f"  Error (ECE):          {ece} {'✓ GOOD' if ece < 0.05 else '⚠ NEEDS TUNING'}")
+    print(f"  Error (ECE):          {ece} {'GOOD' if ece < 0.05 else 'NEEDS TUNING'}")
     print("══════════════════════════════════════\n")
 ```
 
