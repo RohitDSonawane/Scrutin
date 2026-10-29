@@ -1,7 +1,6 @@
-# Scrutin 🔍
+# Scrutin
 
-> **Multi-agent AI misinformation verification platform.**
-> Submit a claim or article URL — six independent AI agents investigate, cross-reference, and deliver a structured, calibrated verdict you can trust.
+Scrutin verifies claims. You give it a sentence or an article URL, six AI agents investigate it, and it returns a verdict (true, false, misleading, unverifiable or inconclusive) with a credibility score and the evidence behind it.
 
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-green)](https://fastapi.tiangolo.com/)
@@ -9,44 +8,55 @@
 [![PydanticAI](https://img.shields.io/badge/PydanticAI-agents-e92063)](https://ai.pydantic.dev/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
----
+![Scrutin home screen](docs/screenshots/home.png)
 
-## 📖 Overview
+## Overview
 
-Scrutin is built from first principles around one idea: **verifying a claim is an unpredictable reasoning task, not a lookup.** A single-sentence claim from a reliable outlet might resolve with one fact-check API hit. A manipulated video with a misleading caption might need forensic analysis, transcript extraction, reverse image search, and several rounds of adversarial re-checking before a verdict is safe to publish.
+Checking a claim does not take a fixed number of steps. A statement from a reliable outlet may be settled by a single fact-check API lookup. A video with a misleading caption may need transcript extraction, reverse image search and several rounds of re-checking before a verdict is safe. A plain RAG pipeline runs the same retrieval steps either way.
 
-A simple RAG (Retrieval-Augmented Generation) pipeline can't flex like that — it does the same fixed number of retrieval steps regardless of how hard the claim actually is. Scrutin instead uses a **hub-and-spoke multi-agent architecture**: six specialized cognitive agents, each with a narrow job and explicit prohibitions, coordinated by an Orchestrator through a shared **Blackboard** — a run-scoped, append-only state object every agent reads from and writes to.
+Scrutin uses a hub-and-spoke design instead. Six agents each have a narrow job and a list of things they may not do. An Orchestrator coordinates them through a shared Blackboard, an append-only state object for each run that every agent reads from and writes to.
 
-The system is designed to be:
-- **Adaptive** — the Orchestrator dynamically replans based on what's still missing, rather than running a fixed pipeline.
-- **Self-skeptical** — a dedicated Adversarial Verifier, running on a *different* model provider, actively tries to break every provisional verdict before it ships.
-- **Calibrated, not vibes-based** — confidence scores are composed by Python from independent boolean judgments (the "deterministic-picker" pattern), never taken as a raw LLM float.
-- **Auditable** — every agent's reasoning, every piece of evidence, and every adversarial critique is retained in the final report and the episodic log.
+A few choices shape how it behaves:
 
----
+- The Orchestrator replans based on what evidence is still missing, so easy claims finish quickly and hard ones get more iterations.
+- An Adversarial Verifier tries to break each provisional verdict before it is published. It runs on a different model provider from the evidence agent.
+- Confidence scores come from Python. Each agent answers yes/no questions and the code combines the answers into the score (the deterministic-picker pattern). No raw LLM float is used.
+- Every agent's reasoning, each piece of evidence and each adversarial critique stays in the final report and the episodic log.
 
-## 🤖 The Six Cognitive Agents
+## Quick start
 
-| # | Agent | Model | Goal | Explicitly Forbidden From |
-|---|-------|-------|------|---------------------------|
-| 1 | **Orchestrator** 🧠 (Planner + Synthesizer) | `gemini-2.5-flash` | Hold global state, plan execution, delegate, resolve conflicts, write the final verdict | Fabricating evidence · skipping the Adversarial step · calling sub-agents directly (must go through the Plan) |
-| 2 | **Claim Decomposition & Framing** 🧩 | `groq:llama-3.1-8b-instant` | Convert raw input into atomic, checkable claims; separate fact from opinion/framing | Judging truth/falsity · using tools · inventing claims not in the source text |
-| 3 | **Evidence & Corroboration** 🕵️‍♂️ | `gemini-2.5-flash` | Run iterative search, judge relevance, flag evidence gaps | Setting the final credibility score · judging source trustworthiness · forensic media analysis |
-| 4 | **Source & Provenance Credibility** 🏛️ | `groq:llama-3.3-70b-versatile` | Judge the *originating source's* trustworthiness (track record, ownership, domain age) | Judging whether the claim's *content* is true · running new web searches · writing reputation updates directly |
-| 5 | **Multimodal Forensics** 🔬 | `gemini-2.5-flash` | Judge media authenticity — manipulated, authentic-but-miscaptioned, or authentic-but-misleading | Judging whether the *caption* is true · forcing a binary real/fake call on mixed signals |
-| 6 | **Adversarial Verifier ("Red Team")** 🛡️ | `groq:llama-3.3-70b-versatile` | Attack the provisional verdict with the strongest good-faith counter-argument | Running general new searches · inheriting the Evidence agent's reasoning trace · setting the final verdict itself |
+```bash
+git clone https://github.com/RohitDSonawane/Scrutin.git
+cd Scrutin/backend
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env                                  # add GOOGLE_API_KEY, GROQ_API_KEY, SERPER_API_KEY, PINECONE_API_KEY
+python -m app.memory.migrations
+python -m app.cli verify --claim "The Eiffel Tower was completed in 1889"
+```
 
-Full system prompts for each agent — including their exact output schemas — live in [`agent-system-prompts.md`](./agent-system-prompts.md).
+You need Python 3.11 or 3.12. For the web UI and the full configuration, see [SETUP.md](./SETUP.md).
 
-**Why the Adversarial Verifier runs on a different provider:** it receives *only* the raw compiled evidence and the provisional verdict string — never the Evidence agent's reasoning trace or planning notes. Running it on Groq/Llama instead of Gemini avoids shared training biases between the "prosecution" and the "defense." This isolation is a hard, non-negotiable constraint (see [`AGENTS.md`](./AGENTS.md) §6).
+## The six agents
 
----
+| # | Agent | Model | Job | Must not |
+|---|-------|-------|-----|----------|
+| 1 | Orchestrator (planner and synthesizer) | `gemini-2.5-flash` | Holds global state, plans execution, delegates, resolves conflicts and writes the final verdict | Fabricate evidence, skip the adversarial step, or call sub-agents directly (it must go through the Plan) |
+| 2 | Claim Decomposition and Framing | `groq:llama-3.1-8b-instant` | Turns raw input into atomic, checkable claims and separates fact from opinion and framing | Judge truth or falsity, use tools, or invent claims that are not in the source text |
+| 3 | Evidence and Corroboration | `gemini-2.5-flash` | Runs iterative search, judges relevance and flags evidence gaps | Set the final credibility score, judge source trustworthiness, or do forensic media analysis |
+| 4 | Source and Provenance Credibility | `groq:llama-3.3-70b-versatile` | Judges how trustworthy the originating source is (track record, ownership, domain age) | Judge whether the claim's content is true, run new web searches, or write reputation updates directly |
+| 5 | Multimodal Forensics | `gemini-2.5-flash` | Judges whether media is manipulated, authentic but miscaptioned, or authentic but misleading | Judge whether the caption is true, or force a real/fake call on mixed signals |
+| 6 | Adversarial Verifier (red team) | `groq:llama-3.3-70b-versatile` | Attacks the provisional verdict with the strongest good-faith counter-argument | Run general new searches, inherit the Evidence agent's reasoning trace, or set the final verdict |
 
-## 🛠️ Architecture
+The full system prompts and output schemas are in [docs/agent-system-prompts.md](./docs/agent-system-prompts.md).
 
-![Scrutin Architecture](docs/architect_photo.png)
+The Adversarial Verifier gets only the raw compiled evidence and the provisional verdict string. It never sees the Evidence agent's reasoning or planning notes, and it runs on Groq/Llama instead of Gemini so the two sides do not share the same training biases. This isolation is a hard rule of the project (see [AGENTS.md](./backend/.agents/AGENTS.md), section 6).
 
-Agents never call each other directly (hub-and-spoke only). All cross-agent requests are typed `AgentRequest` objects placed on the Blackboard; the Orchestrator's next loop iteration processes them.
+## Architecture
+
+![Scrutin architecture](docs/architect_photo.png)
+
+Agents never call each other. Cross-agent requests are typed `AgentRequest` objects placed on the Blackboard, and the Orchestrator handles them on its next loop iteration.
 
 ```text
 ┌─────────────────────────────┐     HTTP POST /api/verify     ┌───────────────────────────────┐
@@ -72,32 +82,30 @@ Agents never call each other directly (hub-and-spoke only). All cross-agent requ
                                                                 └────────────────────────────────┘
 ```
 
-**Core design rules** (enforced project-wide — see [`AGENTS.md`](./AGENTS.md) for the full list):
-- No LangGraph or graph-DSL runtime — the orchestration loop is a plain `while` loop in `orchestrator/loop.py`.
-- Every agent output is a validated Pydantic `BaseModel`. No raw dicts cross agent boundaries.
-- Self-critique (Reflexion-style) is required before any final output — the LLM commits to booleans, Python composes the pass/fail signal.
-- Heavy content (scraped HTML, transcripts) lives on the Blackboard by ID (`WB1`, `TR3`, ...); agents pass IDs, never raw content, in their messages.
-- `asyncio.gather()` for any independent parallel tool/agent calls — never sequential `await` when there's no data dependency.
+The project follows these rules (the full list is in [AGENTS.md](./backend/.agents/AGENTS.md)):
 
-For the deep technical breakdown — Blackboard schema, the deterministic-picker scoring formula, the Reflexion self-critique loop, database tables, and the tool registry — see **[`ARCHITECTURE.md`](./ARCHITECTURE.md)**.
-For getting the project running locally, see **[`SETUP.md`](./SETUP.md)**.
+- No LangGraph or other graph runtime. The orchestration loop is a plain `while` loop in `orchestrator/loop.py`.
+- Every agent output is a validated Pydantic `BaseModel`, so no raw dicts cross agent boundaries.
+- Each run ends with a Reflexion-style self-critique. The LLM commits to booleans and Python composes the pass/fail signal.
+- Large content such as scraped HTML and transcripts lives on the Blackboard under an ID (`WB1`, `TR3` and so on). Agents pass IDs around, not the content.
+- Independent tool and agent calls run together with `asyncio.gather()`.
 
----
+[ARCHITECTURE.md](./ARCHITECTURE.md) covers the Blackboard schema, the scoring formula, the self-critique loop, the database tables and the tool registry. [SETUP.md](./SETUP.md) covers running it locally.
 
-## 📡 API Reference
+## API
 
 ### `POST /api/verify`
 
-Run a full multi-agent verification on a claim or URL.
+Runs a full verification on a claim or URL.
 
-**Request body:**
+Request:
 ```json
 {
   "claim": "The Eiffel Tower was built in 1889"
 }
 ```
 
-**Response:** `VerificationReport`
+Response (`VerificationReport`):
 ```json
 {
   "run_id": "a1b2c3",
@@ -112,15 +120,13 @@ Run a full multi-agent verification on a claim or URL.
 }
 ```
 
-`overall_verdict` is one of `true | false | misleading | unverifiable | inconclusive`. `credibility_score` runs 0 (false) to 100 (true); `confidence` is the Orchestrator's calibrated 0.0–1.0 confidence in that score, derived from the deterministic-picker evaluation, not a raw model guess.
+`overall_verdict` is one of `true`, `false`, `misleading`, `unverifiable` or `inconclusive`. `credibility_score` runs from 0 (false) to 100 (true). `confidence` is the Orchestrator's calibrated 0.0 to 1.0 confidence in that score, taken from the deterministic-picker evaluation.
 
-Interactive docs: `http://localhost:8000/api/docs` · Health check: `http://localhost:8000/api/healthz`.
+Interactive docs are at `http://localhost:8000/api/docs` and the health check is at `http://localhost:8000/api/healthz`.
 
----
+## Command line
 
-## 🧪 Terminal-First Usage
-
-The whole system can also be driven with no frontend at all:
+The backend runs without the frontend:
 
 ```bash
 python -m app.cli verify --claim "The COVID-19 vaccines caused 50,000 deaths in the US"
@@ -130,36 +136,26 @@ python -m app.cli test                            # ground-truth regression suit
 python -m app.cli stats                           # calibration report (ECE)
 ```
 
-Every step streams a structured, color-coded trace line via `loguru` — full example output is in [`ARCHITECTURE.md`](./ARCHITECTURE.md#terminal-trace-example).
+Each step prints a color-coded trace line through `loguru`. An example is in [ARCHITECTURE.md](./ARCHITECTURE.md#terminal-trace-example).
 
----
+## Roadmap
 
-## 🗺️ Roadmap & Future Reference
+Everything here is planned, not built.
 
-This section captures where the project is headed so design decisions made now stay consistent with where we're going.
+SDKs and API access: Python and Node/TypeScript SDKs, managed API keys that route claims to hosted infrastructure, and programmatic access to `credibility_score`, `confidence` and the raw adversarial critique for teams building trust and safety pipelines.
 
-### Coming soon: Scrutin SDK & API access
-We're packaging the verification engine into developer-friendly SDKs so teams can integrate Scrutin without standing up the agent orchestration themselves:
-- **Drop-in SDKs** for Python and Node/TypeScript.
-- **Managed API keys** to route claims to hosted infrastructure.
-- **Programmatic access** to `credibility_score`, `confidence`, and the raw adversarial critique object, for teams building their own trust & safety pipelines on top.
+Near-term technical work:
 
-### Near-term technical roadmap
-- **Calibration feedback loop**: `calibration_log` currently tracks stated confidence vs. actual outcome per run; the next step is closing the loop so Expected Calibration Error (ECE) informs prompt/threshold tuning automatically rather than via manual review (`python -m app.cli stats`).
-- **Source reputation promotion**: `source_reputation` is SQLite-only for the MVP. Once WHOIS + track-record data volume grows, promote it to a proper write-through cache in front of live lookups.
-- **Media hashing in Pinecone**: perceptual hashes (`imagehash.phash`) are stored as raw hex in SQLite for now because the free Pinecone tier only allows one index (already used for `claims` at `dimension=768`). Once a second index/tier is available, promote the `media` namespace to `dimension=64, metric="hamming"` — see [`database-schema.md`](./database-schema.md) for the exact migration note.
-- **Reflexion memory reuse**: `AgentReflection` entries are written on `insufficient_evidence` or retried runs but not yet consulted at plan time. Wiring the Orchestrator to check episodic reflections for structurally similar past claims before planning is the next Reflexion-pattern upgrade.
-- **Tool surface expansion**: `provenance_tools.py` currently covers WHOIS + X (via `bird_x.py`, cookie-based) + Reddit. Deliberately excluded for now: Instagram/LinkedIn/TikTok scrapers (too flaky for reliable verdicts — see [`tool-integration-spec.md`](./tool-integration-spec.md) for the full exclusion list and reasoning) and paid X/Grok API tiers.
+- Calibration loop. `calibration_log` records stated confidence against the actual outcome for each run. The next step is to feed Expected Calibration Error (ECE) back into prompt and threshold tuning automatically. For now it is reviewed by hand with `python -m app.cli stats`.
+- Source reputation cache. `source_reputation` is SQLite-only in the MVP. Once there is enough WHOIS and track-record data, it should become a write-through cache in front of live lookups.
+- Media hashing in Pinecone. Perceptual hashes (`imagehash.phash`) are stored as raw hex in SQLite because the free Pinecone tier allows one index, and `claims` already uses it at `dimension=768`. With a second index, the `media` namespace can move to `dimension=64, metric="hamming"`. The migration note is in [docs/database-schema.md](./docs/database-schema.md).
+- Reflexion memory reuse. `AgentReflection` entries are written on `insufficient_evidence` or retried runs but the Orchestrator does not read them at plan time yet. The next step is to check past reflections for similar claims before planning.
+- More tools. `provenance_tools.py` covers WHOIS, X (through cookie-based `bird_x.py`) and Reddit. Instagram, LinkedIn and TikTok scrapers are left out because they are too flaky for reliable verdicts, and so are the paid X/Grok API tiers. The reasoning is in [docs/tool-integration-spec.md](./docs/tool-integration-spec.md).
 
-### Explicitly out of scope (for now)
-- Local Wikipedia FAISS index (`wiki_dump.py`) — the hosted Wikipedia API is lightweight enough for MVP needs.
-- Any graph-DSL orchestration runtime (LangGraph, etc.) — studied for design patterns only, never imported. See [`AGENTS.md`](./AGENTS.md) §1.
-- Duplicate/legacy Reddit client (`reddit.py`) — superseded by the PRAW-based implementation.
+Out of scope for now: a local Wikipedia FAISS index (`wiki_dump.py`, since the hosted Wikipedia API is enough for the MVP), any graph-DSL orchestration runtime (studied for ideas, never imported; see [AGENTS.md](./backend/.agents/AGENTS.md), section 1), and the older `reddit.py` client, which the PRAW-based one replaced.
 
-If you're picking this project back up after a break: read `AGENTS.md` first (the non-negotiable workspace rules), then `ARCHITECTURE.md` (how the pieces fit), then `SETUP.md` (get it running).
+If you are returning to the project after a break, read [AGENTS.md](./backend/.agents/AGENTS.md) first, then [ARCHITECTURE.md](./ARCHITECTURE.md), then [SETUP.md](./SETUP.md).
 
----
+## License
 
-## 📜 License
-
-MIT — see [LICENSE](LICENSE)
+MIT. See [LICENSE](./LICENSE).

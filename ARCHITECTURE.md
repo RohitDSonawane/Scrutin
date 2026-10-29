@@ -6,7 +6,7 @@ This is the deep technical documentation for the Scrutin platform: how the Black
 
 ## 1. Design Philosophy
 
-Scrutin treats claim verification as a variable-depth reasoning task rather than a fixed retrieval pipeline. The system is built around four non-negotiable rules (full list in [`AGENTS.md`](./AGENTS.md)):
+Scrutin treats claim verification as a variable-depth reasoning task rather than a fixed retrieval pipeline. The system is built around four non-negotiable rules (full list in [`AGENTS.md`](./backend/.agents/AGENTS.md)):
 
 1. **Hub-and-spoke only.** Sub-agents never call each other. Every cross-agent request is a typed `AgentRequest` placed on the Blackboard; the Orchestrator processes it on its next loop iteration.
 2. **Structured output everywhere.** Every agent output is a validated Pydantic `BaseModel`. No raw dicts, no regex-parsed LLM text.
@@ -104,7 +104,7 @@ class Plan(BaseModel):
 
 The plan is **replanned on every REFLECT step** — it is not a static DAG. `requeue()` bumps `retry_count` and stamps a `retry_reason` so the agent knows *why* it's being asked to redo work.
 
-Full schema source: [`blackboard-schemas.md`](./blackboard-schemas.md).
+Full schema source: [`blackboard-schemas.md`](./docs/blackboard-schemas.md).
 
 ---
 
@@ -176,7 +176,7 @@ It may request **one** targeted follow-up search if it names a specific missed s
 
 ## 7. The Six Agents — Prompt Contracts
 
-Full system prompts: [`agent-system-prompts.md`](./agent-system-prompts.md). Summary of each agent's hard prohibitions (these are enforced at the prompt level, not just convention):
+Full system prompts: [`agent-system-prompts.md`](./docs/agent-system-prompts.md). Summary of each agent's hard prohibitions (these are enforced at the prompt level, not just convention):
 
 - **Orchestrator** — never fabricates evidence (only reweighs what sub-agents produced), never skips the Adversarial step, never calls sub-agents directly.
 - **Decomposition** — makes no truth judgment, uses no external tools, never invents a claim not actually present in the input (self-checks for this explicitly).
@@ -203,7 +203,7 @@ Full system prompts: [`agent-system-prompts.md`](./agent-system-prompts.md). Sum
 - `calibration_log` — per-run, per-agent stated confidence vs. actual outcome, feeding the ECE calculation.
 - `claim_similarity_cache` — metadata store paired with Pinecone vector IDs for fast duplicate-claim lookup.
 
-Every connection **must** set `PRAGMA journal_mode=WAL` and `PRAGMA foreign_keys=ON` — this is mandatory to avoid `database is locked` errors under async access. Full DDL: [`database-schema.md`](./database-schema.md).
+Every connection **must** set `PRAGMA journal_mode=WAL` and `PRAGMA foreign_keys=ON` — this is mandatory to avoid `database is locked` errors under async access. Full DDL: [`database-schema.md`](./docs/database-schema.md).
 
 ### Pinecone index
 
@@ -234,7 +234,7 @@ Tools are **stateless pure functions**: typed Pydantic request in, typed Pydanti
 
 Agents declare *capabilities*, not specific tool names — `registry.py` resolves capability tags to the current implementation, so tools can be swapped without touching agent code.
 
-**Deliberately excluded** (see [`tool-integration-spec.md`](./tool-integration-spec.md) for full reasoning):
+**Deliberately excluded** (see [`tool-integration-spec.md`](./docs/tool-integration-spec.md) for full reasoning):
 - Paid X/Grok API scrapers (`xai_x.py`, `xquik.py`, `xurl_x.py`) — no Enterprise X API keys; `bird_x.py` is the sole X capability.
 - Instagram/LinkedIn/TikTok scrapers — trigger CAPTCHAs immediately, too unstable for a short build cycle.
 - Local Wikipedia FAISS index (`wiki_dump.py`) — the hosted API is lightweight enough; avoids hosting a heavy vector index.
@@ -320,9 +320,9 @@ This trace shows the full loop in miniature: fast-path fact-check hit, independe
 
 - [`README.md`](./README.md) — project overview and roadmap
 - [`SETUP.md`](./SETUP.md) — local setup instructions
-- [`AGENTS.md`](./AGENTS.md) — workspace rules and code standards
-- [`agent-system-prompts.md`](./agent-system-prompts.md) — full system prompts for all 6 agents
-- [`blackboard-schemas.md`](./blackboard-schemas.md) — all Pydantic message/state schemas
-- [`database-schema.md`](./database-schema.md) — SQLite + Pinecone persistence definitions
-- [`tool-integration-spec.md`](./tool-integration-spec.md) — tool wrappers, schemas, and exclusions
-- [`evaluation-and-calibration-plan.md`](./evaluation-and-calibration-plan.md) — CLI, test doubles, ground truth, ECE
+- [`AGENTS.md`](./backend/.agents/AGENTS.md) — workspace rules and code standards
+- [`agent-system-prompts.md`](./docs/agent-system-prompts.md) — full system prompts for all 6 agents
+- [`blackboard-schemas.md`](./docs/blackboard-schemas.md) — all Pydantic message/state schemas
+- [`database-schema.md`](./docs/database-schema.md) — SQLite + Pinecone persistence definitions
+- [`tool-integration-spec.md`](./docs/tool-integration-spec.md) — tool wrappers, schemas, and exclusions
+- [`evaluation-and-calibration-plan.md`](./docs/evaluation-and-calibration-plan.md) — CLI, test doubles, ground truth, ECE

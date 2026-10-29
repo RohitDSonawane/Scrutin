@@ -19,7 +19,7 @@ You'll also need API keys for the services Scrutin calls out to (see §4 below).
 ## 2. Clone the repo
 
 ```bash
-git clone https://github.com/yourteam/scrutin.git
+git clone https://github.com/RohitDSonawane/Scrutin.git
 cd scrutin
 ```
 
@@ -68,7 +68,7 @@ This is idempotent — safe to re-run any time. It creates:
 - `calibration_log` — stated confidence vs. actual outcome, for ECE tracking
 - `claim_similarity_cache` — metadata store paired with the Pinecone vector index
 
-Full schema detail: [`database-schema.md`](./database-schema.md).
+Full schema detail: [`database-schema.md`](./docs/database-schema.md).
 
 ### Start the API server
 
@@ -136,7 +136,7 @@ REDDIT_USERNAME=username
 REDDIT_USER_AGENT=hackathon_verifier_v1
 ```
 
-> **Note:** `provenance_tools.py`'s X (Twitter) capability (`bird_x.py`) uses cookie-based GraphQL scraping, not a paid X API key — no `X_API_KEY` is needed for that path. See [`tool-integration-spec.md`](./tool-integration-spec.md) for what was deliberately excluded and why.
+> **Note:** `provenance_tools.py`'s X (Twitter) capability (`bird_x.py`) uses cookie-based GraphQL scraping, not a paid X API key — no `X_API_KEY` is needed for that path. See [`tool-integration-spec.md`](./docs/tool-integration-spec.md) for what was deliberately excluded and why.
 
 ---
 
@@ -207,6 +207,6 @@ If steps 1–4 succeed, the backend is fully functional even before the frontend
 ## 9. Troubleshooting
 
 - **`database is locked` errors** — confirm `PRAGMA journal_mode=WAL` is being set on every connection (it's mandatory, see `app/memory/_db.py`); this is the #1 cause under concurrent async access.
-- **Pinecone index creation fails** — free tier allows only one index. Don't try to create a second index for the `media` namespace; it's intentionally kept in SQLite for now (see [`database-schema.md`](./database-schema.md)).
+- **Pinecone index creation fails** — free tier allows only one index. Don't try to create a second index for the `media` namespace; it's intentionally kept in SQLite for now (see [`database-schema.md`](./docs/database-schema.md)).
 - **Adversarial agent errors reference the wrong provider** — double-check `GROQ_API_KEY` is set; the Adversarial Verifier and Credibility agent are hard-pinned to Groq/Llama and will not silently fall back to Gemini.
 - **Embedding dimension mismatch** — `gemini-embedding-001` outputs `dimension=768`; don't swap in an OpenAI embedding model (different dimensionality, different index).
